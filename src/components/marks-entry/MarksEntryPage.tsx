@@ -5,7 +5,7 @@ import { ClassSelector } from '../common/ClassSelector';
 import { ExamTable } from '../common/ExamTable';
 import { getCurrentAcademicYear } from '../../utils/dateUtils';
 import { ExamStudentListPage } from './ExamStudentListPage';
-import { StudentMarksEntryPlaceholder } from './StudentMarksEntryPlaceholder';
+import { CandidateMarksEntryPage } from './CandidateMarksEntryPage';
 
 interface MarksEntryPageProps {
   classId?: string;
@@ -23,7 +23,7 @@ export const MarksEntryPage: React.FC<MarksEntryPageProps> = ({
   // 1. If both examId and studentId are present: render Step 4 Candidate Marks Entry Sheet
   if (classId && examId && studentId) {
     return (
-      <StudentMarksEntryPlaceholder
+      <CandidateMarksEntryPage
         classId={classId}
         examId={examId}
         studentId={studentId}

@@ -153,10 +153,13 @@ export function computeClassResults(
     (e) => e.classId === classId && e.academicYear === academicYear
   );
 
-  // Quick lookup for marks: `${examId}_${studentId}_${subjectId}`
-  const marksMap = new Map<string, MarkRecord>();
+  // Quick lookup for marks: `${examId}_${studentId}_${subjectId}` -> MarkRecord[]
+  const marksGroupMap = new Map<string, MarkRecord[]>();
   marks.forEach((m) => {
-    marksMap.set(`${m.examId}_${m.studentId}_${m.subjectId}`, m);
+    const key = `${m.examId}_${m.studentId}_${m.subjectId}`;
+    const list = marksGroupMap.get(key) || [];
+    list.push(m);
+    marksGroupMap.set(key, list);
   });
 
   // Ensure examGroups is present, otherwise fallback to legacy weightage
@@ -196,15 +199,48 @@ export function computeClassResults(
 
       // Build examMarks lookup for this student and subject
       classExams.forEach((exam) => {
-        const mark = marksMap.get(`${exam.id}_${student.id}_${sub.id}`);
+        const records = marksGroupMap.get(`${exam.id}_${student.id}_${sub.id}`);
         const examType = examTypes.find((et) => et.id === exam.examTypeId);
-        const maxMarks = examType?.maxMarksDefault || 100;
+        
+        // Calculate max marks for this subject in this exam (from components or exam default)
+        let maxMarks = examType?.maxMarksDefault || 100;
+        if (sub.componentsByExamType && sub.componentsByExamType[exam.examTypeId]) {
+          const comp = sub.componentsByExamType[exam.examTypeId];
+          const compSum = (comp.descriptive || 0) + (comp.practical || 0) + (comp.ia || 0);
+          if (compSum > 0) maxMarks = compSum;
+        } else if (sub.components) {
+          const compSum = (sub.components.descriptive || 0) + (sub.components.practical || 0) + (sub.components.ia || 0);
+          if (compSum > 0) maxMarks = compSum;
+        }
 
-        examMarksRecord[exam.examTypeId] = {
-          obtained: mark ? mark.obtained : null,
-          absent: mark ? mark.absent : false,
-          maxMarks,
-        };
+        if (!records || records.length === 0) {
+          examMarksRecord[exam.examTypeId] = {
+            obtained: null,
+            absent: false,
+            maxMarks,
+          };
+        } else {
+          const allAbsent = records.every((r) => r.absent);
+          if (allAbsent) {
+            examMarksRecord[exam.examTypeId] = {
+              obtained: null,
+              absent: true,
+              maxMarks,
+            };
+          } else {
+            let sum = 0;
+            records.forEach((r) => {
+              if (!r.absent && r.obtained !== null && !isNaN(r.obtained)) {
+                sum += Number(r.obtained);
+              }
+            });
+            examMarksRecord[exam.examTypeId] = {
+              obtained: sum,
+              absent: false,
+              maxMarks,
+            };
+          }
+        }
       });
 
       // Calculate with group calculation engine

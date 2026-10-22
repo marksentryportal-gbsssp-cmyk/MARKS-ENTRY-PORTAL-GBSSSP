@@ -424,7 +424,14 @@ export const StudentMarksheetView: React.FC<StudentMarksheetViewProps> = ({
                           {idx + 1}
                         </td>
                         <td className="py-2 px-3 border-r border-slate-300 font-semibold text-slate-900">
-                          {sr.subject.name}
+                          <div className="flex items-center justify-between gap-1">
+                            <span>{sr.subject.name}</span>
+                            {sr.subject.code && (
+                              <span className="font-mono text-[10px] text-teal-800 bg-teal-50 px-1 py-0.2 rounded border border-teal-200 shrink-0 font-bold">
+                                {sr.subject.code}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-2 px-2 border-r border-slate-300 text-center font-mono">
                           {sr.fullMarks}

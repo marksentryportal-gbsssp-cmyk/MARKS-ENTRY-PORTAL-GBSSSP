@@ -21,12 +21,18 @@ export const defaultGradeScale: GradeScaleItem[] = [
 ];
 
 export const defaultResultSettings: ResultSettings = {
+  examGroups: [
+    { id: 'grp-eval', name: 'Evaluation', examTypeIds: ['eval-1', 'eval-2'], percent: 20 },
+    { id: 'grp-half-yearly', name: 'Half Yearly', examTypeIds: ['half-yearly'], percent: 30 },
+    { id: 'grp-annual', name: 'Annual', examTypeIds: ['annual'], percent: 50 },
+  ],
   weightage: [
     { examTypeId: 'eval-1', percent: 10 },
     { examTypeId: 'eval-2', percent: 10 },
     { examTypeId: 'half-yearly', percent: 30 },
     { examTypeId: 'annual', percent: 50 },
   ],
+  showWeightedBreakdown: true,
   gradeScale: defaultGradeScale,
   passPercent: 33,
   showRank: true,
@@ -186,11 +192,13 @@ export function calculateClassResults(params: {
       return {
         subject: sub,
         examMarks: examMarksMap,
+        groupScores: {},
         weightedObtained,
         fullMarks: sub.fullMarks,
         passMarks,
         grade,
         isPassed,
+        hasMissingMarks: weightedObtained === null,
       };
     });
 

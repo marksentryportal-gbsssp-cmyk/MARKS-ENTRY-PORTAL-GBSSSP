@@ -13,6 +13,8 @@ import {
   Subject,
   MarkRecord,
   ResultSettings,
+  StudentExamStatusRecord,
+  MarksAuditLog,
 } from '../types';
 import { formatDate } from '../utils/dateUtils';
 import { initialStudents } from '../data/seedStudents';
@@ -106,6 +108,25 @@ interface PortalContextType {
   saveMarksBatch: (marksList: MarkRecord[]) => void;
   resetResultSettingsToDefault: () => void;
 
+  // Step 4: Candidate Marks Entry & Safety Operations
+  studentExamStatuses: Record<string, StudentExamStatusRecord>;
+  marksAuditLogs: MarksAuditLog[];
+  marksEntryGuidelines: string[];
+  updateMarksEntryGuidelines: (guidelines: string[]) => void;
+  getStudentExamStatus: (examId: string, studentId: string) => StudentExamStatusRecord | undefined;
+  saveCandidateMarks: (params: {
+    examId: string;
+    studentId: string;
+    marks: MarkRecord[];
+    isDraft?: boolean;
+    includeInNextExam?: boolean;
+    updatedBy?: string;
+  }) => void;
+  markStudentAbsentAll: (examId: string, studentId: string, classSubjects: Subject[]) => void;
+  undoStudentAbsentAll: (examId: string, studentId: string) => void;
+  deleteStudentWithAction: (studentId: string, mode: 'soft' | 'hard') => { success: boolean; marksCount: number };
+  getStudentExamCountWithMarks: (studentId: string) => number;
+
   // Backup & Restore
   exportBackup: () => void;
   importBackup: (jsonString: string) => boolean;
@@ -128,11 +149,21 @@ const STORAGE_KEY = 'gopinath_school_portal_data_v4';
 const defaultSchoolInfo: SchoolInfo = {
   name: 'GOPINATH BORDOLOI SENIOR SECONDARY SCHOOL, PAGLAHAT',
   code: '06H1003',
-  boardName: 'Assam State School Education Board, Div-I',
+  boardName: 'MARKS ENTRY PORTAL , CLASS: ANKUR TO XII (ARTS)',
   portalTitle: 'Internal Examination Marks Entry Portal',
   district: 'Dhubri, Assam',
   academicSession: '2026-2027',
 };
+
+const defaultMarksEntryGuidelines: string[] = [
+  'Do not enter any calculated weightage marks.',
+  'Please enter only the absolute marks secured by the students against each subject in Theory / Practical / IA part.',
+  'Please confirm the Student, Examination, Registration Number, Name and Class of each and every student properly before entering the marks.',
+  'Please enter "0" (Zero) if a student has scored "0" after appearing in the examination.',
+  'For absent candidates (underlined sub heading):',
+  'If any student is absent in any particular subject(s), then please enter "A" (single "A", in capitals) against that particular subject(s).',
+  'If any student is absent in all the subjects, then mark him as absent using the Mark Absent button.',
+];
 
 const defaultSupportContact: SupportContact = {
   title: 'WhatsApp Technical Support',
@@ -404,6 +435,11 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [marks, setMarks] = useState<MarkRecord[]>(() => generateSeedMarks());
   const [resultSettings, setResultSettings] = useState<ResultSettings>(defaultResultSettings);
 
+  // Step 4: Candidate Marks Entry & Safety Data
+  const [studentExamStatuses, setStudentExamStatuses] = useState<Record<string, StudentExamStatusRecord>>({});
+  const [marksAuditLogs, setMarksAuditLogs] = useState<MarksAuditLog[]>([]);
+  const [marksEntryGuidelines, setMarksEntryGuidelines] = useState<string[]>(defaultMarksEntryGuidelines);
+
   // Toasts
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
@@ -495,6 +531,9 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         if (parsed.supportContact) setSupportContact(parsed.supportContact);
         if (parsed.subjects && Array.isArray(parsed.subjects)) setSubjects(parsed.subjects);
         if (parsed.marks && Array.isArray(parsed.marks)) setMarks(parsed.marks);
+        if (parsed.studentExamStatuses) setStudentExamStatuses(parsed.studentExamStatuses);
+        if (parsed.marksAuditLogs && Array.isArray(parsed.marksAuditLogs)) setMarksAuditLogs(parsed.marksAuditLogs);
+        if (parsed.marksEntryGuidelines && Array.isArray(parsed.marksEntryGuidelines)) setMarksEntryGuidelines(parsed.marksEntryGuidelines);
         if (parsed.resultSettings) {
           setResultSettings(migrateResultSettings(parsed.resultSettings));
         }
@@ -519,12 +558,30 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         subjects,
         marks,
         resultSettings,
+        studentExamStatuses,
+        marksAuditLogs,
+        marksEntryGuidelines,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch (e) {
       console.error('Failed to write portal data to localStorage', e);
     }
-  }, [classes, examTypes, exams, students, examStudents, marksStatus, schoolInfo, supportContact, subjects, marks, resultSettings]);
+  }, [
+    classes,
+    examTypes,
+    exams,
+    students,
+    examStudents,
+    marksStatus,
+    schoolInfo,
+    supportContact,
+    subjects,
+    marks,
+    resultSettings,
+    studentExamStatuses,
+    marksAuditLogs,
+    marksEntryGuidelines,
+  ]);
 
   // School & Support Updaters
   const updateSchoolInfo = (info: Partial<SchoolInfo>) => {
@@ -952,11 +1009,285 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const saveMarksBatch = (marksList: MarkRecord[]) => {
     setMarks((prev) => {
       const map = new Map<string, MarkRecord>();
-      prev.forEach((m) => map.set(`${m.examId}_${m.studentId}_${m.subjectId}`, m));
-      marksList.forEach((m) => map.set(`${m.examId}_${m.studentId}_${m.subjectId}`, m));
+      prev.forEach((m) => map.set(`${m.examId}_${m.studentId}_${m.subjectId}_${m.component || 'desc'}`, m));
+      marksList.forEach((m) => map.set(`${m.examId}_${m.studentId}_${m.subjectId}_${m.component || 'desc'}`, m));
       return Array.from(map.values());
     });
     addToast('Marks updated successfully', 'success');
+  };
+
+  // -------------------------------------------------------------
+  // Step 4: Candidate Marks Entry & Safety Handlers
+  // -------------------------------------------------------------
+  const updateMarksEntryGuidelines = (guidelines: string[]) => {
+    setMarksEntryGuidelines(guidelines);
+    addToast('Marks entry guidelines updated', 'success');
+  };
+
+  const getStudentExamStatus = (examId: string, studentId: string) => {
+    return studentExamStatuses[`${examId}_${studentId}`];
+  };
+
+  const getStudentExamCountWithMarks = (studentId: string): number => {
+    const examIds = new Set<string>();
+    marks.forEach((m) => {
+      if (m.studentId === studentId && (m.obtained !== null || m.absent)) {
+        examIds.add(m.examId);
+      }
+    });
+    return examIds.size;
+  };
+
+  const saveCandidateMarks = ({
+    examId,
+    studentId,
+    marks: newMarks,
+    isDraft = false,
+    includeInNextExam = true,
+    updatedBy = 'Teacher / Exam Incharge',
+  }: {
+    examId: string;
+    studentId: string;
+    marks: MarkRecord[];
+    isDraft?: boolean;
+    includeInNextExam?: boolean;
+    updatedBy?: string;
+  }) => {
+    // 1. Replace marks for this exam and student
+    setMarks((prev) => {
+      const filtered = prev.filter(
+        (m) => !(m.examId === examId && m.studentId === studentId)
+      );
+      return [...filtered, ...newMarks];
+    });
+
+    // 2. Check if absent in all subjects
+    const isAllAbsent =
+      newMarks.length > 0 &&
+      newMarks.every((m) => m.absent);
+
+    // 3. Update marks status
+    const statusKey = `${examId}_${studentId}`;
+    setMarksStatus((prev) => ({
+      ...prev,
+      [statusKey]: isDraft ? 'not_completed' : 'completed',
+    }));
+
+    // 4. Update studentExamStatuses
+    setStudentExamStatuses((prev) => ({
+      ...prev,
+      [statusKey]: {
+        examId,
+        studentId,
+        status: isAllAbsent ? 'absent_all' : 'appearing',
+        includeInNextExam,
+        updatedAt: new Date().toISOString(),
+        updatedBy,
+      },
+    }));
+
+    // 5. Update next exam enrollment if includeInNextExam is explicitly set
+    const currentExam = exams.find((e) => e.id === examId);
+    if (currentExam) {
+      const classExams = exams
+        .filter(
+          (e) =>
+            e.classId === currentExam.classId &&
+            e.academicYear === currentExam.academicYear
+        )
+        .sort((a, b) => {
+          const orderA = examTypes.find((t) => t.id === a.examTypeId)?.order || 0;
+          const orderB = examTypes.find((t) => t.id === b.examTypeId)?.order || 0;
+          return orderA - orderB;
+        });
+
+      const currentIndex = classExams.findIndex((e) => e.id === examId);
+      if (currentIndex !== -1 && currentIndex + 1 < classExams.length) {
+        const nextExam = classExams[currentIndex + 1];
+        setExamStudents((prev) => {
+          const currentList = prev[nextExam.id] || [];
+          if (!includeInNextExam) {
+            return {
+              ...prev,
+              [nextExam.id]: currentList.filter((id) => id !== studentId),
+            };
+          } else {
+            if (!currentList.includes(studentId)) {
+              return {
+                ...prev,
+                [nextExam.id]: [...currentList, studentId],
+              };
+            }
+            return prev;
+          }
+        });
+
+        if (!includeInNextExam) {
+          setStudentExamStatuses((prev) => ({
+            ...prev,
+            [`${nextExam.id}_${studentId}`]: {
+              examId: nextExam.id,
+              studentId,
+              status: 'not_appearing',
+              includeInNextExam: false,
+              updatedAt: new Date().toISOString(),
+              updatedBy,
+            },
+          }));
+        }
+      }
+    }
+
+    // 6. Record Audit Log
+    const student = students.find((s) => s.id === studentId);
+    const newLog: MarksAuditLog = {
+      id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      examId,
+      studentId,
+      studentName: student?.name,
+      action: isDraft ? 'draft' : 'submit',
+      updatedAt: new Date().toISOString(),
+      updatedBy,
+      notes: isDraft ? 'Saved marks as draft' : 'Submitted candidate marks',
+    };
+    setMarksAuditLogs((prev) => [newLog, ...prev]);
+
+    // 7. Update exam marksEnteredCount
+    if (!isDraft) {
+      setExams((prev) =>
+        prev.map((e) => {
+          if (e.id === examId) {
+            const count = (e.marksEnteredCount || 0) + 1;
+            return { ...e, marksEnteredCount: Math.min(e.totalStudents ?? 0, count) };
+          }
+          return e;
+        })
+      );
+    }
+  };
+
+  const markStudentAbsentAll = (examId: string, studentId: string, classSubjects: Subject[]) => {
+    const absentMarks: MarkRecord[] = [];
+    classSubjects.forEach((sub) => {
+      absentMarks.push({
+        examId,
+        studentId,
+        subjectId: sub.id,
+        component: 'descriptive',
+        obtained: null,
+        absent: true,
+      });
+    });
+
+    saveCandidateMarks({
+      examId,
+      studentId,
+      marks: absentMarks,
+      isDraft: false,
+      includeInNextExam: true,
+      updatedBy: 'Teacher / Exam Incharge',
+    });
+
+    const student = students.find((s) => s.id === studentId);
+    setMarksAuditLogs((prev) => [
+      {
+        id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        examId,
+        studentId,
+        studentName: student?.name,
+        action: 'mark_absent',
+        updatedAt: new Date().toISOString(),
+        updatedBy: 'Teacher / Exam Incharge',
+        notes: 'Marked candidate absent in all subjects',
+      },
+      ...prev,
+    ]);
+
+    addToast(`Candidate marked absent in all subjects for this exam.`, 'info');
+  };
+
+  const undoStudentAbsentAll = (examId: string, studentId: string) => {
+    setMarks((prev) => prev.filter((m) => !(m.examId === examId && m.studentId === studentId)));
+    setMarksStatus((prev) => ({
+      ...prev,
+      [`${examId}_${studentId}`]: 'not_completed',
+    }));
+    setStudentExamStatuses((prev) => {
+      const copy = { ...prev };
+      delete copy[`${examId}_${studentId}`];
+      return copy;
+    });
+
+    const student = students.find((s) => s.id === studentId);
+    setMarksAuditLogs((prev) => [
+      {
+        id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        examId,
+        studentId,
+        studentName: student?.name,
+        action: 'undo_absent',
+        updatedAt: new Date().toISOString(),
+        updatedBy: 'Teacher / Exam Incharge',
+        notes: 'Cleared absent all status',
+      },
+      ...prev,
+    ]);
+
+    addToast(`Absent status cleared. Ready for marks entry.`, 'info');
+  };
+
+  const deleteStudentWithAction = (
+    studentId: string,
+    mode: 'soft' | 'hard'
+  ): { success: boolean; marksCount: number } => {
+    const marksCount = getStudentExamCountWithMarks(studentId);
+    const student = students.find((s) => s.id === studentId);
+
+    if (mode === 'soft') {
+      setStudents((prev) =>
+        prev.map((s) => (s.id === studentId ? { ...s, active: false } : s))
+      );
+      setMarksAuditLogs((prev) => [
+        {
+          id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          examId: 'all',
+          studentId,
+          studentName: student?.name,
+          action: 'delete',
+          updatedAt: new Date().toISOString(),
+          updatedBy: 'Teacher / Exam Incharge',
+          notes: 'Marked student as Inactive (kept existing marks)',
+        },
+        ...prev,
+      ]);
+      addToast(`Student "${student?.name}" marked as Inactive. All marks preserved.`, 'info');
+      return { success: true, marksCount };
+    } else {
+      setStudents((prev) => prev.filter((s) => s.id !== studentId));
+      setExamStudents((prev) => {
+        const next: Record<string, string[]> = {};
+        Object.entries(prev).forEach(([eId, list]) => {
+          next[eId] = list.filter((id) => id !== studentId);
+        });
+        return next;
+      });
+      setMarks((prev) => prev.filter((m) => m.studentId !== studentId));
+      setMarksAuditLogs((prev) => [
+        {
+          id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          examId: 'all',
+          studentId,
+          studentName: student?.name,
+          action: 'delete',
+          updatedAt: new Date().toISOString(),
+          updatedBy: 'Teacher / Exam Incharge',
+          notes: `Permanently deleted student and removed records across ${marksCount} exam(s)`,
+        },
+        ...prev,
+      ]);
+      addToast(`Student "${student?.name}" permanently deleted.`, 'info');
+      return { success: true, marksCount };
+    }
   };
 
   // Backup & Restore
@@ -975,6 +1306,9 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       subjects,
       marks,
       resultSettings,
+      studentExamStatuses,
+      marksAuditLogs,
+      marksEntryGuidelines,
     };
     const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(
       JSON.stringify(backupData, null, 2)
@@ -1009,6 +1343,9 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       if (data.supportContact) setSupportContact(data.supportContact);
       if (data.subjects && Array.isArray(data.subjects)) setSubjects(data.subjects);
       if (data.marks && Array.isArray(data.marks)) setMarks(data.marks);
+      if (data.studentExamStatuses) setStudentExamStatuses(data.studentExamStatuses);
+      if (data.marksAuditLogs && Array.isArray(data.marksAuditLogs)) setMarksAuditLogs(data.marksAuditLogs);
+      if (data.marksEntryGuidelines && Array.isArray(data.marksEntryGuidelines)) setMarksEntryGuidelines(data.marksEntryGuidelines);
       if (data.resultSettings) setResultSettings(migrateResultSettings(data.resultSettings));
 
       addToast('Backup restored successfully!', 'success');
@@ -1032,6 +1369,9 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setSubjects(initialSubjects);
     setMarks(generateSeedMarks());
     setResultSettings(defaultResultSettings);
+    setStudentExamStatuses({});
+    setMarksAuditLogs([]);
+    setMarksEntryGuidelines(defaultMarksEntryGuidelines);
     localStorage.removeItem(STORAGE_KEY);
     addToast('Reset to default seed data', 'info');
   };
@@ -1091,6 +1431,16 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         deleteSubject,
         saveMarksBatch,
         resetResultSettingsToDefault,
+        studentExamStatuses,
+        marksAuditLogs,
+        marksEntryGuidelines,
+        updateMarksEntryGuidelines,
+        getStudentExamStatus,
+        saveCandidateMarks,
+        markStudentAbsentAll,
+        undoStudentAbsentAll,
+        deleteStudentWithAction,
+        getStudentExamCountWithMarks,
         exportBackup,
         importBackup,
         resetToDefaultData,

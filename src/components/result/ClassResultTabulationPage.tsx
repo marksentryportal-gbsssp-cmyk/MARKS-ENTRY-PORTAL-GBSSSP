@@ -131,7 +131,7 @@ export const ClassResultTabulationPage: React.FC<ClassResultTabulationPageProps>
       'Father Name',
       'Section',
       'Gender',
-      ...scholasticSubjects.map((s) => `${s.name} (100)`),
+      ...scholasticSubjects.map((s) => `${s.code ? `[${s.code}] ` : ''}${s.name} (100)`),
       'Grand Total',
       'Percentage (%)',
       'Grade',
@@ -376,12 +376,19 @@ export const ClassResultTabulationPage: React.FC<ClassResultTabulationPageProps>
                   {scholasticSubjects.map((sub) => (
                     <th
                       key={sub.id}
-                      className="py-2.5 px-2 text-center border-r border-slate-200 font-semibold"
-                      title={`${sub.name} (Full Marks: ${sub.fullMarks})`}
+                      className="py-2 px-2 text-center border-r border-slate-200 font-semibold"
+                      title={`${sub.name} (Code: ${sub.code || 'N/A'}, Full Marks: ${sub.fullMarks})`}
                     >
-                      <span className="truncate max-w-[80px] inline-block">
-                        {sub.name.replace('(MIL)', '').replace('(Core)', '').trim()}
-                      </span>
+                      <div className="flex flex-col items-center">
+                        <span className="truncate max-w-[80px] inline-block">
+                          {sub.name.replace('(MIL)', '').replace('(Core)', '').trim()}
+                        </span>
+                        {sub.code && (
+                          <span className="text-[9px] font-mono font-bold text-teal-800 bg-teal-50 px-1 py-0.2 rounded border border-teal-200">
+                            {sub.code}
+                          </span>
+                        )}
+                      </div>
                     </th>
                   ))}
                   <th className="py-2.5 px-2 text-center border-r border-slate-200 bg-slate-200/50">Total</th>

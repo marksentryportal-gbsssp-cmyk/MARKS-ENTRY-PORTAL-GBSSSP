@@ -24,7 +24,7 @@ export const TopBar: React.FC = () => {
             <ShieldCheck className="w-4 h-4" />
           </div>
           <span className="font-bold text-slate-800 text-sm md:text-base tracking-tight select-none">
-            {schoolInfo.boardName}
+            {schoolInfo.boardName?.includes('ANKUR TO XII') ? schoolInfo.boardName : 'MARKS ENTRY PORTAL , CLASS: ANKUR TO XII (ARTS)'}
           </span>
         </div>
       </div>

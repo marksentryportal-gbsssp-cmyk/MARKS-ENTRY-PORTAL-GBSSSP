@@ -194,7 +194,16 @@ export const BatchMarksheetPrintModal: React.FC<BatchMarksheetPrintModalProps> =
                           return (
                             <tr key={sr.subject.id}>
                               <td className="py-1 px-1.5 border-r border-slate-300 text-center font-mono">{idx + 1}</td>
-                              <td className="py-1 px-2 border-r border-slate-300 font-semibold">{sr.subject.name}</td>
+                              <td className="py-1 px-2 border-r border-slate-300 font-semibold">
+                                <div className="flex items-center justify-between gap-1">
+                                  <span>{sr.subject.name}</span>
+                                  {sr.subject.code && (
+                                    <span className="font-mono text-[9px] text-teal-800 bg-teal-50 px-1 py-0.2 rounded border border-teal-200 shrink-0 font-bold">
+                                      {sr.subject.code}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
                               <td className="py-1 px-1.5 border-r border-slate-300 text-center font-mono">{sr.fullMarks}</td>
                               <td className="py-1 px-1.5 border-r border-slate-300 text-center font-mono text-slate-600">{sr.passMarks}</td>
                               <td className="py-1 px-1 border-r border-slate-300 text-center font-mono">

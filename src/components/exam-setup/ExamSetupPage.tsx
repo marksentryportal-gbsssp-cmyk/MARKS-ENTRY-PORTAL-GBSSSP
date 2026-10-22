@@ -16,7 +16,8 @@ import {
   Check,
   X,
   RefreshCw,
-  Search
+  Search,
+  BookOpen,
 } from 'lucide-react';
 import { usePortal } from '../../store/portalStore';
 import { ExamType, ExamRecord } from '../../types';
@@ -43,6 +44,7 @@ export const ExamSetupPage: React.FC = () => {
     exportBackup,
     importBackup,
     resetToDefaultData,
+    navigateTo,
     addToast,
   } = usePortal();
 
@@ -242,6 +244,16 @@ export const ExamSetupPage: React.FC = () => {
 
         {/* Backup & Restore Action Buttons */}
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => navigateTo('/result/settings')}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-teal-50 hover:bg-teal-100 text-teal-800 text-xs font-bold rounded-md border border-teal-300 transition-colors cursor-pointer"
+            title="Configure Subjects, Codes, Full Marks, and Exam Components"
+          >
+            <BookOpen className="w-3.5 h-3.5 text-teal-700" />
+            <span>Subject Setup</span>
+          </button>
+
           <button
             type="button"
             onClick={exportBackup}

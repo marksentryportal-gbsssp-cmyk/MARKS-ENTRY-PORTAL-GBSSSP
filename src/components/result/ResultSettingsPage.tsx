@@ -17,10 +17,13 @@ import {
   Layers,
   HelpCircle,
   X,
-  Sparkles
+  Sparkles,
+  ArrowUp,
+  ArrowDown,
+  Copy,
 } from 'lucide-react';
 import { usePortal } from '../../store/portalStore';
-import { Subject, GradeScaleItem, ExamGroup } from '../../types';
+import { Subject, GradeScaleItem, ExamGroup, SubjectExamComponentConfig } from '../../types';
 import { defaultExamGroups } from '../../data/seedResultData';
 import { calculateGrade } from '../../utils/resultCalculator';
 
@@ -71,9 +74,17 @@ export const ResultSettingsPage: React.FC = () => {
   const [isAddSubjectModalOpen, setIsAddSubjectModalOpen] = useState(false);
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [newSubName, setNewSubName] = useState('');
+  const [newSubCode, setNewSubCode] = useState('');
   const [newSubFullMarks, setNewSubFullMarks] = useState(100);
-  const [newSubPassMarks, setNewSubPassMarks] = useState(30);
+  const [newSubPassMarks, setNewSubPassMarks] = useState(33);
   const [newSubType, setNewSubType] = useState<'marks' | 'grade'>('marks');
+  const [newSubIncludeInTotal, setNewSubIncludeInTotal] = useState(true);
+  const [newSubIsOptional, setNewSubIsOptional] = useState(false);
+  const [newSubComponents, setNewSubComponents] = useState<
+    Record<string, SubjectExamComponentConfig>
+  >({});
+  const [isCopyClassModalOpen, setIsCopyClassModalOpen] = useState(false);
+  const [sourceCopyClassId, setSourceCopyClassId] = useState('nine');
 
   // Exam Group modal state (for creating or editing groups)
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
@@ -218,33 +229,88 @@ export const ResultSettingsPage: React.FC = () => {
     if (editingSubject) {
       updateSubject(editingSubject.id, {
         name: newSubName.trim(),
+        code: newSubCode.trim().toUpperCase() || undefined,
         fullMarks: Number(newSubFullMarks),
         passMarks: Number(newSubPassMarks),
         type: newSubType,
+        includeInTotal: newSubIncludeInTotal,
+        isOptional: newSubIsOptional,
+        componentsByExamType: newSubComponents,
       });
       setEditingSubject(null);
     } else {
       addSubject({
         classId: selectedClassId,
         name: newSubName.trim(),
+        code: newSubCode.trim().toUpperCase() || undefined,
         fullMarks: Number(newSubFullMarks),
         passMarks: Number(newSubPassMarks),
         order: currentClassSubjects.length + 1,
         type: newSubType,
+        includeInTotal: newSubIncludeInTotal,
+        isOptional: newSubIsOptional,
+        componentsByExamType: newSubComponents,
       });
     }
 
     setNewSubName('');
+    setNewSubCode('');
     setIsAddSubjectModalOpen(false);
   };
 
   const handleEditSubject = (sub: Subject) => {
     setEditingSubject(sub);
     setNewSubName(sub.name);
+    setNewSubCode(sub.code || '');
     setNewSubFullMarks(sub.fullMarks);
     setNewSubPassMarks(sub.passMarks);
     setNewSubType(sub.type);
+    setNewSubIncludeInTotal(sub.includeInTotal !== false);
+    setNewSubIsOptional(Boolean(sub.isOptional));
+    setNewSubComponents(sub.componentsByExamType || {});
     setIsAddSubjectModalOpen(true);
+  };
+
+  const handleMoveSubjectOrder = (subId: string, direction: 'up' | 'down') => {
+    const list = [...subjects.filter((s) => s.classId === selectedClassId)].sort((a, b) => a.order - b.order);
+    const idx = list.findIndex((s) => s.id === subId);
+    if (idx === -1) return;
+
+    if (direction === 'up' && idx > 0) {
+      const prev = list[idx - 1];
+      updateSubject(subId, { order: prev.order });
+      updateSubject(prev.id, { order: list[idx].order });
+    } else if (direction === 'down' && idx < list.length - 1) {
+      const next = list[idx + 1];
+      updateSubject(subId, { order: next.order });
+      updateSubject(next.id, { order: list[idx].order });
+    }
+  };
+
+  const handleCopySubjectsFromClass = () => {
+    const sourceSubjects = subjects.filter((s) => s.classId === sourceCopyClassId);
+    if (sourceSubjects.length === 0) {
+      addToast('Source class has no subjects to copy', 'error');
+      return;
+    }
+    const currentClassSubs = subjects.filter((s) => s.classId === selectedClassId);
+    sourceSubjects.forEach((s, idx) => {
+      addSubject({
+        classId: selectedClassId,
+        name: s.name,
+        code: s.code,
+        fullMarks: s.fullMarks,
+        passMarks: s.passMarks,
+        order: currentClassSubs.length + idx + 1,
+        type: s.type,
+        includeInTotal: s.includeInTotal,
+        isOptional: s.isOptional,
+        componentsByExamType: s.componentsByExamType,
+        components: s.components,
+      });
+    });
+    setIsCopyClassModalOpen(false);
+    addToast(`Copied ${sourceSubjects.length} subjects from ${sourceCopyClassId.toUpperCase()}`, 'success');
   };
 
   // Dynamic formula text generation from localGroups
@@ -773,18 +839,32 @@ export const ResultSettingsPage: React.FC = () => {
 
               <button
                 type="button"
+                onClick={() => setIsCopyClassModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors cursor-pointer"
+                title="Copy curriculum subjects from another class"
+              >
+                <Copy className="w-3.5 h-3.5 text-slate-500" />
+                <span>Copy From Class</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => {
                   setEditingSubject(null);
                   setNewSubName('');
+                  setNewSubCode('');
                   setNewSubFullMarks(100);
-                  setNewSubPassMarks(30);
+                  setNewSubPassMarks(33);
                   setNewSubType('marks');
+                  setNewSubIncludeInTotal(true);
+                  setNewSubIsOptional(false);
+                  setNewSubComponents({});
                   setIsAddSubjectModalOpen(true);
                 }}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-teal-700 hover:bg-teal-800 text-white text-xs font-semibold transition-colors cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
-                Add Subject
+                <span>Add Subject</span>
               </button>
             </div>
           </div>
@@ -794,63 +874,124 @@ export const ResultSettingsPage: React.FC = () => {
               <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
                 <tr>
                   <th className="py-2.5 px-3 w-12 text-center">#</th>
+                  <th className="py-2.5 px-3 w-24 text-center">Code</th>
                   <th className="py-2.5 px-4">Subject Name</th>
                   <th className="py-2.5 px-3 text-center">Type</th>
+                  <th className="py-2.5 px-4 text-center">Component Setup (Per Exam)</th>
                   <th className="py-2.5 px-3 text-center">Full Marks</th>
                   <th className="py-2.5 px-3 text-center">Pass Marks</th>
                   <th className="py-2.5 px-3 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {currentClassSubjects.map((sub, idx) => (
-                  <tr key={sub.id} className="hover:bg-slate-50">
-                    <td className="py-2.5 px-3 text-center font-mono text-slate-500">
-                      {idx + 1}
-                    </td>
-                    <td className="py-2.5 px-4 font-semibold text-slate-900">
-                      {sub.name}
-                    </td>
-                    <td className="py-2.5 px-3 text-center">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          sub.type === 'marks'
-                            ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                            : 'bg-purple-50 text-purple-700 border border-purple-200'
-                        }`}
-                      >
-                        {sub.type === 'marks' ? 'Scholastic' : 'Co-Scholastic (Grade)'}
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-700">
-                      {sub.fullMarks}
-                    </td>
-                    <td className="py-2.5 px-3 text-center font-mono text-slate-600">
-                      {sub.passMarks}
-                    </td>
-                    <td className="py-2.5 px-3 text-center space-x-1">
-                      <button
-                        type="button"
-                        onClick={() => handleEditSubject(sub)}
-                        className="p-1 text-slate-500 hover:text-teal-700"
-                        title="Edit Subject"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (confirm(`Remove "${sub.name}" from this class curriculum?`)) {
-                            deleteSubject(sub.id);
-                          }
-                        }}
-                        className="p-1 text-slate-400 hover:text-red-700"
-                        title="Delete Subject"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {currentClassSubjects.map((sub, idx) => {
+                  return (
+                    <tr key={sub.id} className="hover:bg-slate-50">
+                      <td className="py-2.5 px-3 text-center font-mono text-slate-500">
+                        {idx + 1}
+                      </td>
+                      <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-700">
+                        {sub.code ? (
+                          <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-teal-800 font-mono">
+                            {sub.code}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">--</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-4 font-semibold text-slate-900">
+                        <div className="flex items-center gap-2">
+                          <span>{sub.name}</span>
+                          {sub.isOptional && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] bg-amber-50 text-amber-800 border border-amber-200 font-bold uppercase">
+                              Optional
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-3 text-center">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            sub.type === 'marks'
+                              ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                              : 'bg-purple-50 text-purple-700 border border-purple-200'
+                          }`}
+                        >
+                          {sub.type === 'marks' ? 'Scholastic' : 'Co-Scholastic (Grade)'}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-4 text-center">
+                        {sub.type === 'grade' ? (
+                          <span className="text-slate-400 italic">Direct Grade</span>
+                        ) : sub.componentsByExamType ? (
+                          <div className="flex flex-wrap items-center justify-center gap-1.5 text-[11px] font-mono">
+                            {Object.entries(sub.componentsByExamType).map(([etId, comp]) => (
+                              <span
+                                key={etId}
+                                className="px-1.5 py-0.5 bg-slate-100 border border-slate-200 rounded text-slate-700"
+                                title={`${etId}: Theory ${comp.descriptive || 0}, Practical ${comp.practical || 0}, IA ${comp.ia || 0}`}
+                              >
+                                <strong>{etId}:</strong> {comp.descriptive || 0}
+                                {comp.practical ? `+${comp.practical}P` : ''}
+                                {comp.ia ? `+${comp.ia}IA` : ''}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-slate-500 font-mono">Theory: {sub.fullMarks}</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-700">
+                        {sub.fullMarks}
+                      </td>
+                      <td className="py-2.5 px-3 text-center font-mono text-slate-600">
+                        {sub.passMarks}
+                      </td>
+                      <td className="py-2.5 px-3 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            disabled={idx === 0}
+                            onClick={() => handleMoveSubjectOrder(sub.id, 'up')}
+                            className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-20 transition-colors"
+                            title="Move Up"
+                          >
+                            <ArrowUp className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={idx === currentClassSubjects.length - 1}
+                            onClick={() => handleMoveSubjectOrder(sub.id, 'down')}
+                            className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-20 transition-colors"
+                            title="Move Down"
+                          >
+                            <ArrowDown className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleEditSubject(sub)}
+                            className="p-1 text-slate-500 hover:text-teal-700 transition-colors"
+                            title="Edit Subject"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm(`Remove "${sub.name}" from this class curriculum?`)) {
+                                deleteSubject(sub.id);
+                              }
+                            }}
+                            className="p-1 text-slate-400 hover:text-red-700 transition-colors"
+                            title="Delete Subject"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1157,85 +1298,311 @@ export const ResultSettingsPage: React.FC = () => {
 
       {/* Modal: Add/Edit Subject */}
       {isAddSubjectModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-5 space-y-4">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-xl max-w-xl w-full p-5 space-y-4 max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-              <h3 className="text-sm font-bold text-slate-900">
-                {editingSubject ? 'Edit Subject' : 'Add Subject to Class Curriculum'}
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-teal-700" />
+                <span>{editingSubject ? 'Edit Subject' : 'Add Subject to Class Curriculum'}</span>
               </h3>
               <button
                 type="button"
                 onClick={() => setIsAddSubjectModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-slate-400 hover:text-slate-600 p-1 rounded"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <form onSubmit={handleCreateSubject} className="space-y-4 text-xs">
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Subject Name:</label>
-                <input
-                  type="text"
-                  placeholder="e.g. General Mathematics or Drawing"
-                  value={newSubName}
-                  onChange={(e) => setNewSubName(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded focus:outline-teal-600"
-                  required
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="font-bold text-slate-700 block mb-1">
+                    Subject Name <span className="text-red-500">*</span>:
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. GENERAL MATHEMATICS or ASSAMESE"
+                    value={newSubName}
+                    onChange={(e) => setNewSubName(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded focus:outline-teal-600 font-semibold"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">
+                    Subject Code:
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. C1, C2, 1, 40"
+                    value={newSubCode}
+                    onChange={(e) => setNewSubCode(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded focus:outline-teal-600 font-mono font-bold uppercase"
+                  />
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Category:</label>
+                  <select
+                    value={newSubType}
+                    onChange={(e) => setNewSubType(e.target.value as 'marks' | 'grade')}
+                    className="w-full px-3 py-2 border border-slate-300 rounded focus:outline-teal-600 font-semibold bg-white"
+                  >
+                    <option value="marks">Scholastic (Numerical Marks)</option>
+                    <option value="grade">Co-Scholastic (Direct Grade)</option>
+                  </select>
+                </div>
+
                 <div>
                   <label className="font-bold text-slate-700 block mb-1">Full Marks:</label>
                   <input
                     type="number"
                     value={newSubFullMarks}
                     onChange={(e) => setNewSubFullMarks(Number(e.target.value))}
-                    className="w-full px-3 py-2 font-mono border border-slate-300 rounded focus:outline-teal-600"
+                    className="w-full px-3 py-2 font-mono font-bold border border-slate-300 rounded focus:outline-teal-600"
                     required
                   />
                 </div>
+
                 <div>
                   <label className="font-bold text-slate-700 block mb-1">Pass Marks:</label>
                   <input
                     type="number"
                     value={newSubPassMarks}
                     onChange={(e) => setNewSubPassMarks(Number(e.target.value))}
-                    className="w-full px-3 py-2 font-mono border border-slate-300 rounded focus:outline-teal-600"
+                    className="w-full px-3 py-2 font-mono font-bold border border-slate-300 rounded focus:outline-teal-600"
                     required
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Evaluation Category:</label>
-                <select
-                  value={newSubType}
-                  onChange={(e) => setNewSubType(e.target.value as 'marks' | 'grade')}
-                  className="w-full px-3 py-2 border border-slate-300 rounded focus:outline-teal-600 font-semibold"
-                >
-                  <option value="marks">Scholastic (Scored with Numerical Marks)</option>
-                  <option value="grade">Co-Scholastic (Evaluated directly with Grades A/B/C)</option>
-                </select>
+              {/* Options */}
+              <div className="flex flex-wrap items-center gap-6 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                <label className="inline-flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newSubIncludeInTotal}
+                    onChange={(e) => setNewSubIncludeInTotal(e.target.checked)}
+                    className="w-4 h-4 text-teal-600 rounded"
+                  />
+                  <span className="font-semibold text-slate-800">
+                    Include in composite total score & rank
+                  </span>
+                </label>
+
+                <label className="inline-flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newSubIsOptional}
+                    onChange={(e) => setNewSubIsOptional(e.target.checked)}
+                    className="w-4 h-4 text-teal-600 rounded"
+                  />
+                  <span className="font-semibold text-slate-800">
+                    Elective / Optional Subject
+                  </span>
+                </label>
               </div>
+
+              {/* Mark components per exam type (Descriptive / Practical / IA) */}
+              {newSubType === 'marks' && (
+                <div className="space-y-2 border border-slate-200 rounded-lg p-3.5 bg-slate-50/50">
+                  <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
+                    <div>
+                      <span className="font-bold text-slate-800 block">
+                        Exam Components Breakdown (Theory / Practical / IA)
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        Set full marks for each part per exam stage. Parts with 0 or blank display as "NA" on marks entry.
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 pt-1">
+                    {examTypes.map((et) => {
+                      const currentComp = newSubComponents[et.id] || {
+                        descriptive: et.id.includes('eval') ? 50 : 100,
+                        practical: 0,
+                        ia: 0,
+                      };
+
+                      const compTotal =
+                        (Number(currentComp.descriptive) || 0) +
+                        (Number(currentComp.practical) || 0) +
+                        (Number(currentComp.ia) || 0);
+
+                      return (
+                        <div
+                          key={et.id}
+                          className="bg-white p-2.5 rounded border border-slate-200 grid grid-cols-1 sm:grid-cols-4 gap-2 items-center"
+                        >
+                          <div>
+                            <span className="font-bold text-slate-800 block text-xs">
+                              {et.name}
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              Total: <strong>{compTotal}</strong>
+                            </span>
+                          </div>
+
+                          <div>
+                            <label className="text-[10px] font-semibold text-slate-600 block mb-0.5">
+                              Descriptive (Theory)
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={currentComp.descriptive ?? ''}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                setNewSubComponents((prev) => ({
+                                  ...prev,
+                                  [et.id]: {
+                                    ...(prev[et.id] || { practical: 0, ia: 0 }),
+                                    descriptive: val,
+                                  },
+                                }));
+                              }}
+                              placeholder="0 (NA)"
+                              className="w-full px-2 py-1 font-mono text-center border border-slate-300 rounded text-xs"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-[10px] font-semibold text-slate-600 block mb-0.5">
+                              Practical
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={currentComp.practical ?? ''}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                setNewSubComponents((prev) => ({
+                                  ...prev,
+                                  [et.id]: {
+                                    ...(prev[et.id] || { descriptive: 0, ia: 0 }),
+                                    practical: val,
+                                  },
+                                }));
+                              }}
+                              placeholder="0 (NA)"
+                              className="w-full px-2 py-1 font-mono text-center border border-slate-300 rounded text-xs"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-[10px] font-semibold text-slate-600 block mb-0.5">
+                              IA (Internal)
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={currentComp.ia ?? ''}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                setNewSubComponents((prev) => ({
+                                  ...prev,
+                                  [et.id]: {
+                                    ...(prev[et.id] || { descriptive: 0, practical: 0 }),
+                                    ia: val,
+                                  },
+                                }));
+                              }}
+                              placeholder="0 (NA)"
+                              className="w-full px-2 py-1 font-mono text-center border border-slate-300 rounded text-xs"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
                 <button
                   type="button"
                   onClick={() => setIsAddSubjectModalOpen(false)}
-                  className="px-3 py-1.5 border border-slate-300 rounded text-slate-700 hover:bg-slate-50"
+                  className="px-3.5 py-1.5 border border-slate-300 rounded text-slate-700 hover:bg-slate-50 font-semibold"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 bg-teal-700 hover:bg-teal-800 text-white font-bold rounded"
+                  className="px-4 py-1.5 bg-teal-700 hover:bg-teal-800 text-white font-bold rounded shadow-xs"
                 >
                   {editingSubject ? 'Update Subject' : 'Add Subject'}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Copy Subjects From Another Class */}
+      {isCopyClassModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-5 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <Copy className="w-4 h-4 text-teal-600" />
+                <span>Copy Subjects from Another Class</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsCopyClassModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs text-slate-700">
+              <p>
+                Select a class to copy all of its curriculum subjects, codes, full marks, and component breakdowns into{' '}
+                <strong>Class {classes.find((c) => c.id === selectedClassId)?.name}</strong>:
+              </p>
+
+              <div>
+                <label className="font-bold text-slate-800 block mb-1">
+                  Source Class:
+                </label>
+                <select
+                  value={sourceCopyClassId}
+                  onChange={(e) => setSourceCopyClassId(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded bg-white font-semibold text-xs focus:outline-teal-600"
+                >
+                  {classes
+                    .filter((c) => c.id !== selectedClassId)
+                    .map((cls) => (
+                      <option key={cls.id} value={cls.id}>
+                        Class {cls.name} ({subjects.filter((s) => s.classId === cls.id).length} subjects)
+                      </option>
+                    ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setIsCopyClassModalOpen(false)}
+                className="px-3.5 py-1.5 border border-slate-300 rounded text-slate-700 hover:bg-slate-50 font-semibold text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleCopySubjectsFromClass}
+                className="px-4 py-1.5 bg-teal-700 hover:bg-teal-800 text-white font-bold rounded text-xs shadow-xs"
+              >
+                Copy Subjects Now
+              </button>
+            </div>
           </div>
         </div>
       )}

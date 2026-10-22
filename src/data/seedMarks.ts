@@ -62,6 +62,7 @@ export function generateSeedMarks(): MarkRecord[] {
             examId,
             studentId: student.id,
             subjectId: sub.id,
+            component: 'descriptive',
             obtained,
             absent,
           });
