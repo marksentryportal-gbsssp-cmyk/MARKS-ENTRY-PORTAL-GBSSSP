@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { usePortal } from '../../store/portalStore';
 import { htmlInputToDateStr } from '../../utils/dateUtils';
+import { getNextRollNo, parseNumericRollNo } from '../../utils/rollNoUtils';
 
 interface StudentModalProps {
   isOpen: boolean;
@@ -47,19 +48,55 @@ export const StudentModal: React.FC<StudentModalProps> = ({
   const [section, setSection] = useState('A');
   const [rollNo, setRollNo] = useState('');
   const [admissionNo, setAdmissionNo] = useState('');
+  const [rollError, setRollError] = useState<string | null>(null);
 
   // Tab B: Import From Previous Exam / Class
   const [sourceClassId, setSourceClassId] = useState(targetClassId);
   const [sourceYear, setSourceYear] = useState('2025-2026');
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
 
+  // Pre-fill next sequential roll number (highest + 1)
+  React.useEffect(() => {
+    if (isOpen) {
+      const nextNum = getNextRollNo(students, targetClassId, targetAcademicYear);
+      setRollNo(String(nextNum));
+      setRegistrationNo(generateNextRegNo());
+      setRollError(null);
+    }
+  }, [isOpen, targetClassId, targetAcademicYear, students]);
+
   if (!isOpen) return null;
 
   // Tab A submit handler
   const handleAddNewStudent = (e: React.FormEvent) => {
     e.preventDefault();
+    setRollError(null);
+
     if (!name.trim() || !fatherName.trim() || !dobInput) {
       addToast('Please fill in required fields (Name, Father Name, DOB)', 'error');
+      return;
+    }
+
+    const numRoll = parseNumericRollNo(rollNo);
+    if (numRoll === null || numRoll <= 0) {
+      setRollError('Roll No. must be a valid positive number.');
+      addToast('Roll No. must be a valid positive number.', 'error');
+      return;
+    }
+
+    // Check duplicate roll number in this class and academic year
+    const duplicate = students.find(
+      (s) =>
+        s.classId === targetClassId &&
+        s.academicYear === targetAcademicYear &&
+        s.active !== false &&
+        s.rollNo.trim() === rollNo.trim()
+    );
+
+    if (duplicate) {
+      const msg = `Roll No. ${rollNo} is already assigned to ${duplicate.name} in this class.`;
+      setRollError(msg);
+      addToast(msg, 'error');
       return;
     }
 
@@ -73,7 +110,7 @@ export const StudentModal: React.FC<StudentModalProps> = ({
         gender,
         classId: targetClassId,
         section: section.trim() || 'A',
-        rollNo: rollNo.trim() || '01',
+        rollNo: rollNo.trim(),
         academicYear: targetAcademicYear,
         admissionNo: admissionNo.trim() || undefined,
         active: true,
@@ -316,15 +353,23 @@ export const StudentModal: React.FC<StudentModalProps> = ({
                 {/* Roll No */}
                 <div>
                   <label className="font-semibold text-slate-700 block mb-1">
-                    Roll No.:
+                    Roll No. <span className="text-red-600">*</span>:
                   </label>
                   <input
                     type="text"
                     value={rollNo}
-                    onChange={(e) => setRollNo(e.target.value)}
+                    onChange={(e) => {
+                      setRollNo(e.target.value);
+                      if (rollError) setRollError(null);
+                    }}
                     placeholder="e.g. 13"
-                    className="w-full px-3 py-2 border border-slate-300 rounded text-xs font-mono focus:ring-2 focus:ring-teal-600 focus:outline-hidden"
+                    className={`w-full px-3 py-2 border rounded text-xs font-mono focus:ring-2 focus:ring-teal-600 focus:outline-hidden ${
+                      rollError ? 'border-red-500 bg-red-50 text-red-900' : 'border-slate-300'
+                    }`}
                   />
+                  {rollError && (
+                    <p className="text-[11px] text-red-600 mt-1 font-medium">{rollError}</p>
+                  )}
                 </div>
               </div>
 

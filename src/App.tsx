@@ -11,6 +11,10 @@ import { ResultPage } from './components/result/ResultPage';
 import { ExamSetupPage } from './components/exam-setup/ExamSetupPage';
 import { ChecklistPage } from './components/pages/ChecklistPage';
 import { FinalSubmitPage } from './components/pages/FinalSubmitPage';
+import { LoginPage } from './components/auth/LoginPage';
+import { ForgotPasswordPage } from './components/auth/ForgotPasswordPage';
+import { ChangePasswordModal } from './components/auth/ChangePasswordModal';
+import { UserManagementTab } from './components/auth/UserManagementTab';
 import { LogoutModal } from './components/common/LogoutModal';
 import { SupportEditModal } from './components/common/SupportEditModal';
 
@@ -35,11 +39,42 @@ const PortalRouter: React.FC = () => {
       {currentRoute.tab === 'exam-setup' && <ExamSetupPage />}
       {currentRoute.tab === 'checklist' && <ChecklistPage />}
       {currentRoute.tab === 'final-submit' && <FinalSubmitPage />}
+      {currentRoute.tab === 'users' && <UserManagementTab />}
     </main>
   );
 };
 
 const PortalLayout: React.FC = () => {
+  const {
+    currentUser,
+    currentRoute,
+    isChangePasswordOpen,
+    isForcedPasswordChange,
+    setIsChangePasswordOpen,
+  } = usePortal();
+
+  // 1. Unauthenticated or public routes
+  if (currentRoute.tab === 'forgot-password') {
+    return (
+      <div className="min-h-screen bg-[#f1f5f9] text-slate-800 font-sans antialiased">
+        <ForgotPasswordPage />
+        <SupportEditModal />
+        <ToastContainer />
+      </div>
+    );
+  }
+
+  if (!currentUser || currentRoute.tab === 'login') {
+    return (
+      <div className="min-h-screen bg-[#f1f5f9] text-slate-800 font-sans antialiased">
+        <LoginPage />
+        <SupportEditModal />
+        <ToastContainer />
+      </div>
+    );
+  }
+
+  // 2. Authenticated layout
   return (
     <div className="min-h-screen bg-[#f1f5f9] text-slate-800 font-sans flex flex-col antialiased">
       {/* Left Sidebar (Fixed 240px desktop, slide-out drawer on mobile) */}
@@ -62,6 +97,11 @@ const PortalLayout: React.FC = () => {
       {/* Modals & Overlays */}
       <LogoutModal />
       <SupportEditModal />
+      <ChangePasswordModal
+        isOpen={isChangePasswordOpen}
+        isForced={isForcedPasswordChange}
+        onClose={() => setIsChangePasswordOpen(false)}
+      />
       <ToastContainer />
     </div>
   );

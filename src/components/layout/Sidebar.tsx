@@ -9,7 +9,8 @@ import {
   X,
   MessageCircle,
   Phone,
-  Edit2
+  Edit2,
+  Users as UsersIcon,
 } from 'lucide-react';
 import { usePortal } from '../../store/portalStore';
 import { NavigationTab } from '../../types';
@@ -20,20 +21,24 @@ interface NavItem {
   label: string;
   path: string;
   icon: React.ComponentType<{ className?: string }>;
+  adminOnly?: boolean;
 }
 
-const navItems: NavItem[] = [
+const baseNavItems: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
   { id: 'marks-entry', label: 'Marks Entry', path: '/marks-entry', icon: ClipboardPen },
   { id: 'result', label: 'Result', path: '/result', icon: Award },
   { id: 'exam-setup', label: 'Exam Setup', path: '/exam-setup', icon: Settings },
   { id: 'checklist', label: 'Checklist', path: '/checklist', icon: ListChecks },
   { id: 'final-submit', label: 'Final Submit', path: '/final-submit', icon: SendHorizontal },
+  { id: 'users', label: 'User Management', path: '/users', icon: UsersIcon, adminOnly: true },
 ];
 
 export const Sidebar: React.FC = () => {
   const {
     currentRoute,
+    currentUser,
+    schoolInfo,
     navigateTo,
     isMobileDrawerOpen,
     setIsMobileDrawerOpen,
@@ -71,14 +76,21 @@ export const Sidebar: React.FC = () => {
           <p className="text-[11px] text-teal-400 font-medium">
             Sr. Sec. School, Paglahat
           </p>
-          <div className="mt-1.5 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono tracking-wider bg-slate-800 text-slate-300 border border-slate-700">
-            CODE: 06H1003
+          <div className="mt-1.5 flex flex-col items-center gap-1">
+            <div className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono tracking-wider bg-slate-800 text-slate-300 border border-slate-700">
+              CODE: {schoolInfo.code}
+            </div>
+            <div className="text-[10px] font-mono text-teal-400 font-semibold">
+              UDISE: {schoolInfo.udiseCode || '18000000000'}
+            </div>
           </div>
         </div>
 
         {/* Menu Items */}
         <nav className="mt-4 px-2 space-y-1" aria-label="Portal Navigation">
-          {navItems.map((item) => {
+          {baseNavItems
+            .filter((item) => !item.adminOnly || currentUser?.role === 'admin')
+            .map((item) => {
             const Icon = item.icon;
             const isActive = currentRoute.tab === item.id;
 

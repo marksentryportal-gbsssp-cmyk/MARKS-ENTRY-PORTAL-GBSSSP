@@ -41,6 +41,9 @@ interface ImportPreviewTableProps {
   columnMappings: Record<string, string>;
   onUpdateColumnMapping: (standardKey: string, fileHeader: string) => void;
   missingRequiredColumns: string[];
+  rollNoOrderMode: 'file' | 'alphabetical';
+  onChangeRollNoOrder: (mode: 'file' | 'alphabetical') => void;
+  fileHasRollNos?: boolean;
 }
 
 export const ImportPreviewTable: React.FC<ImportPreviewTableProps> = ({
@@ -56,6 +59,9 @@ export const ImportPreviewTable: React.FC<ImportPreviewTableProps> = ({
   columnMappings,
   onUpdateColumnMapping,
   missingRequiredColumns,
+  rollNoOrderMode,
+  onChangeRollNoOrder,
+  fileHasRollNos,
 }) => {
   // Counts
   const totalRows = rows.length;

@@ -38,6 +38,7 @@ export async function verifyPassword(
  * Standard seed credentials for initial admin
  */
 export const DEFAULT_ADMIN_CODE = '06H1003';
+export const DEFAULT_ADMIN_UDISE = '18000000000';
 export const DEFAULT_ADMIN_PASSWORD = '123456';
 export const DEFAULT_ADMIN_SALT = 'salt_06h1003_secure_seed';
 

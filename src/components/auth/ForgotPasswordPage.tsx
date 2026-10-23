@@ -5,17 +5,16 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
-  KeyRound,
   Info,
 } from 'lucide-react';
 import { usePortal } from '../../store/portalStore';
 import { PasswordInput } from './PasswordInput';
 import {
-  requestOtpForInstitution,
+  requestOtpForSchool,
   verifyOtp,
 } from '../../services/otpService';
 import { isValidPassword } from '../../services/authService';
-import { sanitizeInstitutionCode } from '../../utils/validators';
+import { sanitizeUdiseCode, isValidUdiseCode } from '../../utils/validators';
 
 export const ForgotPasswordPage: React.FC = () => {
   const {
@@ -27,7 +26,7 @@ export const ForgotPasswordPage: React.FC = () => {
     addToast,
   } = usePortal();
 
-  const [institutionCode, setInstitutionCode] = useState('06H1003');
+  const [udiseCode, setUdiseCode] = useState(schoolInfo.udiseCode || '18000000000');
   const [otp, setOtp] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -39,6 +38,7 @@ export const ForgotPasswordPage: React.FC = () => {
   const [otpSentMessage, setOtpSentMessage] = useState<string | null>(null);
   const [demoOtpCode, setDemoOtpCode] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [udiseInlineError, setUdiseInlineError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [redirectCountdown, setRedirectCountdown] = useState<number | null>(null);
 
@@ -64,19 +64,39 @@ export const ForgotPasswordPage: React.FC = () => {
     return () => clearInterval(timer);
   }, [redirectCountdown]);
 
+  const handleUdiseChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const sanitized = sanitizeUdiseCode(e.target.value);
+    setUdiseCode(sanitized);
+    setErrorMessage(null);
+
+    if (sanitized.length > 0 && sanitized.length < 11) {
+      setUdiseInlineError('School UDISE Code must be 11 digits');
+    } else {
+      setUdiseInlineError(null);
+    }
+  };
+
   // Step 1: Send OTP
   const handleSendOtp = () => {
     setErrorMessage(null);
-    const code = sanitizeInstitutionCode(institutionCode);
+    const code = sanitizeUdiseCode(udiseCode);
     if (!code) {
-      setErrorMessage('Please enter your Institute Code.');
+      setErrorMessage('Please enter your School UDISE Code.');
+      return;
+    }
+
+    if (!isValidUdiseCode(code)) {
+      setErrorMessage('School UDISE Code must be 11 digits');
+      setUdiseInlineError('School UDISE Code must be 11 digits');
       return;
     }
 
     // Verify code exists in system
-    const user = users.find((u) => u.institutionCode.toUpperCase() === code);
+    const user = users.find(
+      (u) => (u.udiseCode || u.institutionCode || '').toUpperCase() === code
+    );
     if (!user) {
-      setErrorMessage('Institute code not found. Please verify your institution code.');
+      setErrorMessage('School UDISE Code not found in the system. Please verify.');
       return;
     }
 
@@ -87,7 +107,7 @@ export const ForgotPasswordPage: React.FC = () => {
         email: schoolInfo.email || 'gopinathschool2024@gmail.com',
       };
 
-      const result = requestOtpForInstitution(code, destination, otpDeliveryMode);
+      const result = requestOtpForSchool(code, destination, otpDeliveryMode);
       setIsSendingOtp(false);
 
       if (!result.success) {
@@ -100,7 +120,6 @@ export const ForgotPasswordPage: React.FC = () => {
 
       if (otpDeliveryMode === 'demo' && result.otp) {
         setDemoOtpCode(result.otp);
-        // Pre-fill OTP automatically for ease if user wants, or let them enter it
       } else {
         setDemoOtpCode(null);
       }
@@ -117,11 +136,13 @@ export const ForgotPasswordPage: React.FC = () => {
     e.preventDefault();
     setErrorMessage(null);
 
-    const code = sanitizeInstitutionCode(institutionCode);
-    if (!code) {
-      setErrorMessage('Please enter your Institute Code.');
+    const code = sanitizeUdiseCode(udiseCode);
+    if (!code || !isValidUdiseCode(code)) {
+      setErrorMessage('School UDISE Code must be 11 digits');
+      setUdiseInlineError('School UDISE Code must be 11 digits');
       return;
     }
+
     if (!otp.trim()) {
       setErrorMessage('Please enter the 6-digit OTP.');
       return;
@@ -187,7 +208,7 @@ export const ForgotPasswordPage: React.FC = () => {
           <div className="w-full flex items-center gap-3 pt-2">
             <div className="h-px flex-1 bg-blue-200" />
             <h2 className="text-base font-bold text-[#0b57d0] tracking-tight whitespace-nowrap">
-              Institute Forgot Password
+              School Forgot Password
             </h2>
             <div className="h-px flex-1 bg-blue-200" />
           </div>
@@ -245,23 +266,24 @@ export const ForgotPasswordPage: React.FC = () => {
               </div>
             )}
 
-            {/* Field 1: Institute Code */}
+            {/* Field 1: School UDISE Code */}
             <div className="space-y-1">
               <label
-                htmlFor="forgotCode"
+                htmlFor="forgotUdise"
                 className="block text-xs font-bold text-slate-700 px-1"
               >
-                Institute Code
+                School UDISE Code
               </label>
               <div className="flex gap-2">
                 <input
-                  id="forgotCode"
+                  id="forgotUdise"
                   type="text"
-                  maxLength={7}
-                  value={institutionCode}
-                  onChange={(e) => setInstitutionCode(sanitizeInstitutionCode(e.target.value))}
-                  placeholder="e.g. 06H1003"
-                  className="w-full px-4 py-2.5 text-sm font-mono uppercase text-slate-800 placeholder-slate-400 rounded-full border border-slate-300 bg-white hover:border-blue-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition-all focus:outline-hidden"
+                  inputMode="numeric"
+                  maxLength={11}
+                  value={udiseCode}
+                  onChange={handleUdiseChange}
+                  placeholder="Enter your School UDISE Code"
+                  className="w-full px-4 py-2.5 text-sm font-mono text-slate-800 placeholder-slate-400 rounded-full border border-slate-300 bg-white hover:border-blue-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition-all focus:outline-hidden"
                   required
                 />
                 <button
@@ -279,6 +301,11 @@ export const ForgotPasswordPage: React.FC = () => {
                   )}
                 </button>
               </div>
+              {udiseInlineError && (
+                <p className="text-[11px] text-red-600 font-medium px-2">
+                  {udiseInlineError}
+                </p>
+              )}
               {otpSentMessage && (
                 <p className="text-[11px] text-emerald-700 font-medium px-2">
                   ✓ {otpSentMessage}
@@ -294,6 +321,7 @@ export const ForgotPasswordPage: React.FC = () => {
               <input
                 id="forgotOtp"
                 type="text"
+                inputMode="numeric"
                 maxLength={6}
                 value={otp}
                 onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
@@ -311,7 +339,7 @@ export const ForgotPasswordPage: React.FC = () => {
               <PasswordInput
                 value={newPassword}
                 onChange={setNewPassword}
-                placeholder="Enter new password"
+                placeholder="Enter new password (min. 8 characters)"
                 variant="pill"
                 showStrengthMeter
                 required

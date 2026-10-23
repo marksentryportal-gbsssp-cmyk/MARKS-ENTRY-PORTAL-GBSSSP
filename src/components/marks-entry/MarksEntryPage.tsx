@@ -1,11 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import { Calendar, Filter, BookOpen } from 'lucide-react';
+import { Calendar, Filter, BookOpen, Users, UserPlus } from 'lucide-react';
 import { usePortal } from '../../store/portalStore';
 import { ClassSelector } from '../common/ClassSelector';
 import { ExamTable } from '../common/ExamTable';
 import { getCurrentAcademicYear } from '../../utils/dateUtils';
 import { ExamStudentListPage } from './ExamStudentListPage';
 import { CandidateMarksEntryPage } from './CandidateMarksEntryPage';
+import { ClassRosterDrawer } from './ClassRosterDrawer';
 
 interface MarksEntryPageProps {
   classId?: string;
@@ -18,9 +19,9 @@ export const MarksEntryPage: React.FC<MarksEntryPageProps> = ({
   examId,
   studentId,
 }) => {
-  const { classes, exams, navigateTo } = usePortal();
+  const { classes, exams, students, navigateTo } = usePortal();
 
-  // 1. If both examId and studentId are present: render Step 4 Candidate Marks Entry Sheet
+  // 1. If both examId and studentId are present: render Candidate Marks Entry Sheet
   if (classId && examId && studentId) {
     return (
       <CandidateMarksEntryPage
@@ -31,7 +32,7 @@ export const MarksEntryPage: React.FC<MarksEntryPageProps> = ({
     );
   }
 
-  // 2. If examId is present: render full Exam Student List (Step 3 main view)
+  // 2. If examId is present: render full Exam Student List
   if (classId && examId) {
     return <ExamStudentListPage classId={classId} examId={examId} />;
   }
@@ -39,6 +40,7 @@ export const MarksEntryPage: React.FC<MarksEntryPageProps> = ({
   // 3. Otherwise: render Select Class & List of Examinations
   const defaultYear = getCurrentAcademicYear();
   const [selectedYearFilter, setSelectedYearFilter] = useState<string>('all');
+  const [isRosterDrawerOpen, setIsRosterDrawerOpen] = useState(false);
 
   const selectedClass = classes.find((c) => c.id === classId);
 
@@ -54,6 +56,14 @@ export const MarksEntryPage: React.FC<MarksEntryPageProps> = ({
     if (!classId) return [];
     return exams.filter((e) => e.classId === classId);
   }, [exams, classId]);
+
+  // Total students enrolled in selected class & defaultYear
+  const classStudentsCount = useMemo(() => {
+    if (!classId) return 0;
+    return students.filter(
+      (s) => s.classId === classId && s.academicYear === defaultYear && s.active !== false
+    ).length;
+  }, [students, classId, defaultYear]);
 
   // Group class exams by academic year
   const groupedExams = useMemo(() => {
@@ -91,7 +101,7 @@ export const MarksEntryPage: React.FC<MarksEntryPageProps> = ({
           className="bg-white rounded-lg border border-slate-200 shadow-xs p-5 md:p-6"
         >
           {/* Card Header matching reference portal */}
-          <div className="border-b border-slate-300 pb-3 mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="border-b border-slate-300 pb-3 mb-5 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
             <div>
               <h2
                 id="class-exams-heading"
@@ -104,28 +114,40 @@ export const MarksEntryPage: React.FC<MarksEntryPageProps> = ({
               </p>
             </div>
 
-            {/* Academic Year dropdown filter at top right */}
-            <div className="flex items-center gap-2">
-              <label
-                htmlFor="academic-year-filter"
-                className="text-xs font-semibold text-slate-600 flex items-center gap-1.5 whitespace-nowrap"
+            {/* Actions: View Class Students (Roster) + Academic Year Filter */}
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setIsRosterDrawerOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-teal-50 border border-teal-300 text-teal-800 hover:bg-teal-100 hover:border-teal-400 text-xs font-bold transition-colors cursor-pointer shadow-2xs"
+                title="View class student roster and roll number ordering"
               >
-                <Filter className="w-3.5 h-3.5 text-teal-700" />
-                <span>Academic Year:</span>
-              </label>
-              <select
-                id="academic-year-filter"
-                value={selectedYearFilter}
-                onChange={(e) => setSelectedYearFilter(e.target.value)}
-                className="text-xs bg-white border border-slate-300 rounded-md px-2.5 py-1.5 font-medium text-slate-700 focus:outline-hidden focus:ring-2 focus:ring-teal-600 cursor-pointer"
-              >
-                <option value="all">All Academic Years</option>
-                {distinctYears.map((yr) => (
-                  <option key={yr} value={yr}>
-                    {yr} {yr === defaultYear ? '(Current)' : ''}
-                  </option>
-                ))}
-              </select>
+                <Users className="w-3.5 h-3.5 text-teal-700" />
+                <span>View Students ({classStudentsCount})</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <label
+                  htmlFor="academic-year-filter"
+                  className="text-xs font-semibold text-slate-600 flex items-center gap-1.5 whitespace-nowrap"
+                >
+                  <Filter className="w-3.5 h-3.5 text-teal-700" />
+                  <span>Academic Year:</span>
+                </label>
+                <select
+                  id="academic-year-filter"
+                  value={selectedYearFilter}
+                  onChange={(e) => setSelectedYearFilter(e.target.value)}
+                  className="text-xs bg-white border border-slate-300 rounded-md px-2.5 py-1.5 font-medium text-slate-700 focus:outline-hidden focus:ring-2 focus:ring-teal-600 cursor-pointer"
+                >
+                  <option value="all">All Academic Years</option>
+                  {distinctYears.map((yr) => (
+                    <option key={yr} value={yr}>
+                      {yr} {yr === defaultYear ? '(Current)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
 
@@ -161,6 +183,15 @@ export const MarksEntryPage: React.FC<MarksEntryPageProps> = ({
               No examination records found for Class {selectedClass.name}. You can create them in the <strong>Exam Setup</strong> section.
             </div>
           )}
+
+          {/* Class Roster Drawer */}
+          <ClassRosterDrawer
+            isOpen={isRosterDrawerOpen}
+            onClose={() => setIsRosterDrawerOpen(false)}
+            classId={selectedClass.id}
+            className={selectedClass.name}
+            academicYear={defaultYear}
+          />
         </section>
       ) : (
         /* Empty guidance card if no class is selected yet */

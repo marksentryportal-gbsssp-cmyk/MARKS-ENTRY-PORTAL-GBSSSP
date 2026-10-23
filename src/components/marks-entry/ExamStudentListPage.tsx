@@ -10,16 +10,19 @@ import {
   Eye,
   CheckCircle2,
   FileSpreadsheet,
+  Users,
 } from 'lucide-react';
 import { usePortal } from '../../store/portalStore';
 import { Student } from '../../types';
 import { getExamStatus } from '../../utils/dateUtils';
+import { parseNumericRollNo, sortByRollNo } from '../../utils/rollNoUtils';
 import { ProgressStrip } from '../common/ProgressStrip';
 import { StatusPill } from '../common/StatusPill';
 import { DataTable, ColumnDef } from '../common/DataTable';
 import { StudentModal } from './StudentModal';
 import { EditStudentModal } from './EditStudentModal';
 import { BulkImportModal } from '../bulk-import/BulkImportModal';
+import { ClassRosterDrawer } from './ClassRosterDrawer';
 
 interface ExamStudentListPageProps {
   classId: string;
@@ -46,6 +49,7 @@ export const ExamStudentListPage: React.FC<ExamStudentListPageProps> = ({
   // Modals & Highlight state
   const [isAddStudentOpen, setIsAddStudentOpen] = useState(false);
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
+  const [isRosterOpen, setIsRosterOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [openKebabStudentId, setOpenKebabStudentId] = useState<string | null>(null);
   const [highlightedStudentIds, setHighlightedStudentIds] = useState<string[]>([]);
@@ -80,8 +84,10 @@ export const ExamStudentListPage: React.FC<ExamStudentListPageProps> = ({
   const isFinalSubmitted = examStatus === 'FinalSubmitted';
   const isOutsideDates = examStatus === 'Closed' || examStatus === 'NotStarted';
 
-  // Enrolled students for this exam
-  const enrolledStudents = getStudentsForExam(examId);
+  // Enrolled students for this exam sorted by numeric Roll No. ascending
+  const enrolledStudents = useMemo(() => {
+    return sortByRollNo(getStudentsForExam(examId));
+  }, [examId, getStudentsForExam]);
 
   // Completed count calculation
   const completedCount = useMemo(() => {
@@ -124,8 +130,35 @@ export const ExamStudentListPage: React.FC<ExamStudentListPageProps> = ({
     );
   };
 
-  // Define Table Columns
+  // Define Table Columns - Roll No is the FIRST column with numeric sorting
   const columns: ColumnDef<Student>[] = [
+    {
+      key: 'rollNo',
+      header: 'Roll No.',
+      sortable: true,
+      align: 'center',
+      width: '100px',
+      accessor: (s) => parseNumericRollNo(s.rollNo) ?? 999999,
+      render: (s) => {
+        const num = parseNumericRollNo(s.rollNo);
+        if (num !== null) {
+          return (
+            <span className="font-mono text-slate-900 font-bold text-sm bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+              {s.rollNo}
+            </span>
+          );
+        }
+        return (
+          <span
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300"
+            title="Missing or non-numeric Roll No."
+          >
+            <AlertTriangle className="w-3 h-3 text-amber-600" />
+            <span>No Roll</span>
+          </span>
+        );
+      },
+    },
     {
       key: 'registrationNo',
       header: 'Registration No.',
@@ -155,7 +188,7 @@ export const ExamStudentListPage: React.FC<ExamStudentListPageProps> = ({
             )}
           </span>
           <span className="text-[10px] text-slate-400 block font-normal font-mono">
-            Roll: {s.rollNo || 'N/A'} &bull; Sec: {s.section || 'A'}
+            Sec: {s.section || 'A'}
           </span>
         </div>
       ),
@@ -218,51 +251,46 @@ export const ExamStudentListPage: React.FC<ExamStudentListPageProps> = ({
 
         return (
           <div className="flex items-center justify-center gap-2 relative">
-            {isFinalSubmitted ? (
-              <button
-                type="button"
-                onClick={() => handleActionClick(s.id)}
-                className="inline-flex items-center gap-1 px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded border border-slate-300 transition-colors shadow-2xs"
-              >
-                <Eye className="w-3.5 h-3.5 text-slate-600" />
-                <span>View Marks</span>
-              </button>
-            ) : isCompleted ? (
-              <button
-                type="button"
-                disabled={isOutsideDates}
-                onClick={() => handleActionClick(s.id)}
-                className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-400 text-xs font-bold rounded transition-colors shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                title="Edit student marks"
-              >
-                <Edit className="w-3.5 h-3.5 text-emerald-700" />
-                <span>EDIT</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                disabled={isOutsideDates}
-                onClick={() => handleActionClick(s.id)}
-                className="inline-flex items-center gap-1 px-3 py-1 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 hover:border-teal-600 text-xs font-semibold rounded transition-colors shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                title="Enter student marks"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-teal-700" />
-                <span>ENTER MARKS</span>
-              </button>
-            )}
+            {/* Primary Action Button: Enter Marks or View Marks */}
+            <button
+              type="button"
+              onClick={() => handleActionClick(s.id)}
+              className={`inline-flex items-center justify-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-md shadow-2xs hover:shadow transition-colors cursor-pointer ${
+                isCompleted
+                  ? 'bg-teal-700 hover:bg-teal-800 text-white'
+                  : 'bg-[#9333ea] hover:bg-[#7e22ce] text-white'
+              }`}
+              title={
+                isCompleted
+                  ? 'View / Edit Marks for this candidate'
+                  : 'Enter marks for this candidate'
+              }
+            >
+              {isCompleted ? (
+                <>
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>View / Edit</span>
+                </>
+              ) : (
+                <>
+                  <Edit className="w-3.5 h-3.5" />
+                  <span>Enter Marks</span>
+                </>
+              )}
+            </button>
 
+            {/* Context menu for student operations if exam not submitted */}
             {!isFinalSubmitted && (
               <div className="relative">
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
+                  onClick={() =>
                     setOpenKebabStudentId(
                       openKebabStudentId === s.id ? null : s.id
-                    );
-                  }}
+                    )
+                  }
                   className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-                  aria-label="Student options menu"
+                  title="More actions"
                 >
                   <MoreVertical className="w-4 h-4" />
                 </button>
@@ -280,7 +308,7 @@ export const ExamStudentListPage: React.FC<ExamStudentListPageProps> = ({
                           setEditingStudent(s);
                           setOpenKebabStudentId(null);
                         }}
-                        className="w-full px-3 py-2 flex items-center gap-2 text-slate-700 hover:bg-slate-100 transition-colors"
+                        className="w-full px-3 py-2 flex items-center gap-2 text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
                       >
                         <Edit className="w-3.5 h-3.5 text-teal-700" />
                         <span>Edit Student Details</span>
@@ -288,7 +316,7 @@ export const ExamStudentListPage: React.FC<ExamStudentListPageProps> = ({
                       <button
                         type="button"
                         onClick={() => handleRemoveStudent(s)}
-                        className="w-full px-3 py-2 flex items-center gap-2 text-red-700 hover:bg-red-50 transition-colors"
+                        className="w-full px-3 py-2 flex items-center gap-2 text-red-700 hover:bg-red-50 transition-colors cursor-pointer"
                       >
                         <Trash2 className="w-3.5 h-3.5 text-red-600" />
                         <span>Remove from this exam</span>
@@ -380,37 +408,50 @@ export const ExamStudentListPage: React.FC<ExamStudentListPageProps> = ({
           </h2>
         </div>
 
-        {/* Small grey sub heading on left, TWO BUTTONS (Click to Add Student + Bulk Import) on right */}
-        <div className="border-b border-slate-200 pb-3.5 mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        {/* Small grey sub heading on left, ACTION BUTTONS on right */}
+        <div className="border-b border-slate-200 pb-3.5 mb-5 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <p className="text-xs md:text-sm text-slate-500 font-medium">
             List of Class {currentClass.name} Students {currentExam.academicYear}
           </p>
 
-          {!isFinalSubmitted && (
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-              {/* Button 1: Click to Add Student (Teal background) */}
-              <button
-                type="button"
-                disabled={isOutsideDates}
-                onClick={() => setIsAddStudentOpen(true)}
-                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-[#0f766e] hover:bg-teal-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-md shadow-xs transition-colors cursor-pointer"
-              >
-                <UserPlus className="w-4 h-4" />
-                <span>Click to Add Student</span>
-              </button>
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Class Roster & Renumber Tool Button */}
+            <button
+              type="button"
+              onClick={() => setIsRosterOpen(true)}
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 text-xs font-semibold rounded-md shadow-2xs transition-colors cursor-pointer"
+              title="View class student roster and renumber roll numbers"
+            >
+              <Users className="w-4 h-4 text-slate-600" />
+              <span>Class Roster &amp; Renumber</span>
+            </button>
 
-              {/* Button 2: Bulk Import (White background, teal outline, teal text, upload icon) */}
-              <button
-                type="button"
-                disabled={isOutsideDates}
-                onClick={() => setIsBulkImportOpen(true)}
-                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-white hover:bg-teal-50/70 border border-[#0f766e] text-[#0f766e] disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold rounded-md shadow-2xs transition-colors cursor-pointer"
-              >
-                <Upload className="w-4 h-4 text-[#0f766e]" />
-                <span>Bulk Import</span>
-              </button>
-            </div>
-          )}
+            {!isFinalSubmitted && (
+              <>
+                {/* Button 1: Click to Add Student (Teal background) */}
+                <button
+                  type="button"
+                  disabled={isOutsideDates}
+                  onClick={() => setIsAddStudentOpen(true)}
+                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-[#0f766e] hover:bg-teal-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-md shadow-xs transition-colors cursor-pointer"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  <span>Click to Add Student</span>
+                </button>
+
+                {/* Button 2: Bulk Import (White background, teal outline, teal text, upload icon) */}
+                <button
+                  type="button"
+                  disabled={isOutsideDates}
+                  onClick={() => setIsBulkImportOpen(true)}
+                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-white hover:bg-teal-50/70 border border-[#0f766e] text-[#0f766e] disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold rounded-md shadow-2xs transition-colors cursor-pointer"
+                >
+                  <Upload className="w-4 h-4 text-[#0f766e]" />
+                  <span>Bulk Import</span>
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Progress Strip */}
@@ -421,7 +462,7 @@ export const ExamStudentListPage: React.FC<ExamStudentListPageProps> = ({
           backText={`Back to Class ${currentClass.name} Exams`}
         />
 
-        {/* Data Table */}
+        {/* Data Table with Roll No as first column */}
         <DataTable
           data={enrolledStudents}
           columns={columns}
@@ -431,17 +472,17 @@ export const ExamStudentListPage: React.FC<ExamStudentListPageProps> = ({
               : ''
           }
           searchFields={[
+            (s) => s.rollNo || '',
             (s) => s.name,
             (s) => s.fatherName,
             (s) => s.registrationNo,
-            (s) => s.rollNo || '',
           ]}
-          searchPlaceholder="Search name, father name, registration no..."
+          searchPlaceholder="Search roll no, student name, father name, registration no..."
           emptyMessage={`No enrolled students found for ${currentExam.name}. Click "Click to Add Student" or "Bulk Import" above to enroll candidates.`}
         />
       </section>
 
-      {/* Add Student Modal (Single / Import from class) */}
+      {/* Add Student Modal */}
       <StudentModal
         isOpen={isAddStudentOpen}
         onClose={() => setIsAddStudentOpen(false)}
@@ -450,7 +491,7 @@ export const ExamStudentListPage: React.FC<ExamStudentListPageProps> = ({
         targetExamId={examId}
       />
 
-      {/* Dedicated Bulk Import Modal (3-step workflow, drag-and-drop, Excel parser, duplicate handling) */}
+      {/* Dedicated Bulk Import Modal */}
       <BulkImportModal
         isOpen={isBulkImportOpen}
         onClose={() => setIsBulkImportOpen(false)}
@@ -466,6 +507,23 @@ export const ExamStudentListPage: React.FC<ExamStudentListPageProps> = ({
         isOpen={Boolean(editingStudent)}
         student={editingStudent}
         onClose={() => setEditingStudent(null)}
+      />
+
+      {/* Class Roster & Renumber Drawer */}
+      <ClassRosterDrawer
+        isOpen={isRosterOpen}
+        onClose={() => setIsRosterOpen(false)}
+        classId={currentClass.id}
+        className={currentClass.name}
+        academicYear={currentExam.academicYear}
+        onOpenAddStudent={() => {
+          setIsRosterOpen(false);
+          setIsAddStudentOpen(true);
+        }}
+        onOpenEditStudent={(s) => {
+          setIsRosterOpen(false);
+          setEditingStudent(s);
+        }}
       />
     </div>
   );

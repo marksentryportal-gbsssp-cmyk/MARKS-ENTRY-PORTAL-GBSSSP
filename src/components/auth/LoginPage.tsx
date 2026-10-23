@@ -1,18 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import {
   User as UserIcon,
-  Phone,
-  Mail,
-  HelpCircle,
   AlertCircle,
   Loader2,
   ShieldCheck,
-  CheckCircle,
 } from 'lucide-react';
 import { usePortal } from '../../store/portalStore';
 import { NotificationBoard } from './NotificationBoard';
 import { PasswordInput } from './PasswordInput';
-import { sanitizeInstitutionCode } from '../../utils/validators';
+import { sanitizeUdiseCode, isValidUdiseCode } from '../../utils/validators';
 
 export const LoginPage: React.FC = () => {
   const {
@@ -23,11 +19,12 @@ export const LoginPage: React.FC = () => {
     setIsSupportModalOpen,
   } = usePortal();
 
-  const [institutionCode, setInstitutionCode] = useState('06H1003');
+  const [udiseCode, setUdiseCode] = useState(schoolInfo.udiseCode || '18000000000');
   const [password, setPassword] = useState('');
   const [keepSignedIn, setKeepSignedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [udiseError, setUdiseError] = useState<string | null>(null);
 
   // Lockout countdown timer
   const [lockoutSeconds, setLockoutSeconds] = useState<number>(0);
@@ -47,19 +44,33 @@ export const LoginPage: React.FC = () => {
     return () => clearInterval(interval);
   }, [lockoutSeconds]);
 
-  const handleCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setInstitutionCode(sanitizeInstitutionCode(e.target.value));
+  const handleUdiseChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const sanitized = sanitizeUdiseCode(e.target.value);
+    setUdiseCode(sanitized);
     if (errorMessage && lockoutSeconds <= 0) setErrorMessage(null);
+
+    if (sanitized.length > 0 && sanitized.length < 11) {
+      setUdiseError('School UDISE Code must be 11 digits');
+    } else {
+      setUdiseError(null);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (lockoutSeconds > 0) return;
 
-    if (!institutionCode.trim()) {
-      setErrorMessage('Please enter your Institution Code.');
+    if (!udiseCode.trim()) {
+      setErrorMessage('Please enter your School UDISE Code.');
       return;
     }
+
+    if (!isValidUdiseCode(udiseCode)) {
+      setErrorMessage('School UDISE Code must be 11 digits');
+      setUdiseError('School UDISE Code must be 11 digits');
+      return;
+    }
+
     if (!password) {
       setErrorMessage('Please enter your password.');
       return;
@@ -69,11 +80,11 @@ export const LoginPage: React.FC = () => {
       setIsLoading(true);
       setErrorMessage(null);
 
-      const res = await login(institutionCode, password, keepSignedIn);
+      const res = await login(udiseCode, password, keepSignedIn);
       setIsLoading(false);
 
       if (!res.success) {
-        setErrorMessage(res.error || 'Invalid Institution code or password');
+        setErrorMessage(res.error || 'Invalid School UDISE Code or password');
         if (res.lockedSeconds) {
           setLockoutSeconds(res.lockedSeconds);
         }
@@ -155,13 +166,13 @@ export const LoginPage: React.FC = () => {
               <NotificationBoard onOpenSupport={() => setIsSupportModalOpen(true)} />
             </div>
 
-            {/* RIGHT half: Institution Login Form (Desktop Right, Mobile Top) */}
+            {/* RIGHT half: School Login Form (Desktop Right, Mobile Top) */}
             <div className="w-full md:w-1/2 p-6 sm:p-10 order-1 md:order-2 flex flex-col justify-center">
               <div className="space-y-6 max-w-sm mx-auto w-full">
                 {/* Title */}
                 <div className="text-center space-y-2">
                   <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
-                    Institution Login
+                    School Login
                   </h2>
                   <div className="h-0.5 w-16 bg-purple-600 mx-auto rounded-full" />
                 </div>
@@ -193,30 +204,40 @@ export const LoginPage: React.FC = () => {
 
                 {/* Login Form */}
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  {/* Institution Code Input */}
+                  {/* School UDISE Code Input */}
                   <div className="space-y-1">
                     <label
-                      htmlFor="instCode"
+                      htmlFor="udiseCode"
                       className="block text-xs font-semibold text-slate-700"
                     >
-                      Institution Code <span className="text-red-500">*</span>
+                      School UDISE Code <span className="text-red-500">*</span>
                     </label>
                     <div className="relative flex items-center">
                       <div className="absolute left-3.5 text-slate-400 pointer-events-none">
                         <UserIcon className="w-4 h-4" />
                       </div>
                       <input
-                        id="instCode"
+                        id="udiseCode"
                         type="text"
-                        maxLength={7}
-                        value={institutionCode}
-                        onChange={handleCodeChange}
+                        inputMode="numeric"
+                        maxLength={11}
+                        value={udiseCode}
+                        onChange={handleUdiseChange}
                         disabled={isLoading || lockoutSeconds > 0}
-                        placeholder="Enter Institution 6 Digit code"
-                        className="w-full pl-10 pr-3 py-2.5 text-sm font-mono uppercase text-slate-800 placeholder-slate-400 rounded-md border-b-2 border-slate-300 bg-slate-50/70 hover:bg-slate-50 focus:border-purple-600 focus:bg-white border-t border-l border-r border-slate-200 transition-all focus:outline-hidden"
+                        placeholder="Enter School UDISE Code"
+                        className={`w-full pl-10 pr-3 py-2.5 text-sm font-mono text-slate-800 placeholder-slate-400 rounded-md border-b-2 bg-slate-50/70 hover:bg-slate-50 focus:bg-white border-t border-l border-r border-slate-200 transition-all focus:outline-hidden ${
+                          udiseError
+                            ? 'border-b-red-500 focus:border-red-600'
+                            : 'border-b-slate-300 focus:border-purple-600'
+                        }`}
                         required
                       />
                     </div>
+                    {udiseError && (
+                      <p className="text-[11px] text-red-600 font-medium px-1">
+                        {udiseError}
+                      </p>
+                    )}
                   </div>
 
                   {/* Password Input */}

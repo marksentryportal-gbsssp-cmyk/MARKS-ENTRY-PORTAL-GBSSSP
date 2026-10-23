@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import {
   NavigationTab,
   RouteState,
@@ -15,6 +15,10 @@ import {
   ResultSettings,
   StudentExamStatusRecord,
   MarksAuditLog,
+  User,
+  UserRole,
+  AuthSession,
+  AuthAuditLog,
 } from '../types';
 import { formatDate } from '../utils/dateUtils';
 import { initialStudents } from '../data/seedStudents';
@@ -23,6 +27,21 @@ import {
   defaultResultSettings,
   generateSeedMarks,
 } from '../data/seedResultData';
+import {
+  hashPassword,
+  verifyPassword,
+  generateSalt,
+  DEFAULT_ADMIN_HASH,
+  DEFAULT_ADMIN_SALT,
+  DEFAULT_ADMIN_UDISE,
+  loadStoredSession,
+  saveStoredSession,
+  clearStoredSession,
+} from '../services/authService';
+import {
+  sortByRollNo,
+  getOrderedExamStudents as getOrderedExamStudentsUtil,
+} from '../utils/rollNoUtils';
 
 interface PortalContextType {
   // Routing
@@ -37,6 +56,44 @@ interface PortalContextType {
   setIsLogoutModalOpen: (open: boolean) => void;
   isSupportEditOpen: boolean;
   setIsSupportEditOpen: (open: boolean) => void;
+  isSupportModalOpen: boolean;
+  setIsSupportModalOpen: (open: boolean) => void;
+
+  // Authentication & Users (Step 5 & 6)
+  currentUser: User | null;
+  session: AuthSession | null;
+  users: User[];
+  authAuditLogs: AuthAuditLog[];
+  otpDeliveryMode: 'demo' | 'live';
+  setOtpDeliveryMode: (mode: 'demo' | 'live') => void;
+  defaultFirstTimePassword: string;
+  setDefaultFirstTimePassword: (pwd: string) => void;
+  isChangePasswordOpen: boolean;
+  setIsChangePasswordOpen: (open: boolean) => void;
+  isForcedPasswordChange: boolean;
+  setIsForcedPasswordChange: (forced: boolean) => void;
+  login: (
+    udiseCode: string,
+    password: string,
+    keepSignedIn?: boolean
+  ) => Promise<{ success: boolean; error?: string; lockedSeconds?: number }>;
+  logout: () => void;
+  changePassword: (
+    userId: string,
+    newPassword: string,
+    currentPassword?: string
+  ) => Promise<{ success: boolean; error?: string }>;
+  resetUserPassword: (userId: string, tempPassword?: string) => Promise<boolean>;
+  resetUserPasswordByCode: (
+    udiseCode: string,
+    newPassword: string
+  ) => Promise<{ success: boolean; error?: string }>;
+  addUser: (
+    userData: Omit<User, 'id' | 'passwordHash' | 'salt' | 'failedAttempts'>,
+    initialPassword?: string
+  ) => Promise<User>;
+  updateUser: (userId: string, updates: Partial<User>) => void;
+  deleteUser: (userId: string) => void;
 
   // School info & Support
   schoolInfo: SchoolInfo;
@@ -71,11 +128,13 @@ interface PortalContextType {
   toggleExamFinalSubmit: (id: string) => void;
   reopenExam: (id: string, newEndDate?: string) => void;
 
-  // Students & Marks Status (Step 3)
+  // Students & Marks Status (Step 3 & Roll Number ordering)
   students: Student[];
   examStudents: Record<string, string[]>; // examId -> studentId[]
   marksStatus: Record<string, MarksStatus>; // `${examId}_${studentId}` -> status
   getStudentsForExam: (examId: string) => Student[];
+  getOrderedExamStudents: (examId: string) => Student[];
+  updateStudentRollNos: (updates: { studentId: string; rollNo: string }[]) => void;
   createStudent: (studentData: Omit<Student, 'id'>, targetExamId?: string) => Student;
   updateStudent: (studentId: string, updates: Partial<Student>) => void;
   deleteStudent: (studentId: string) => void;
@@ -144,16 +203,45 @@ interface PortalContextType {
   removeToast: (id: string) => void;
 }
 
-const STORAGE_KEY = 'gopinath_school_portal_data_v4';
+const STORAGE_KEY = 'gopinath_school_portal_data_v5';
 
 const defaultSchoolInfo: SchoolInfo = {
   name: 'GOPINATH BORDOLOI SENIOR SECONDARY SCHOOL, PAGLAHAT',
   code: '06H1003',
+  udiseCode: DEFAULT_ADMIN_UDISE, // 18000000000
   boardName: 'MARKS ENTRY PORTAL , CLASS: ANKUR TO XII (ARTS)',
   portalTitle: 'Internal Examination Marks Entry Portal',
   district: 'Dhubri, Assam',
   academicSession: '2026-2027',
+  email: 'gopinathschool2024@gmail.com',
+  phone: '+91 94350 12345',
 };
+
+const defaultAdminUser: User = {
+  id: 'user-admin-1',
+  udiseCode: DEFAULT_ADMIN_UDISE,
+  name: 'School Examination Incharge',
+  role: 'admin',
+  passwordHash: DEFAULT_ADMIN_HASH,
+  salt: DEFAULT_ADMIN_SALT,
+  mustChangePassword: true,
+  failedAttempts: 0,
+  active: true,
+};
+
+const defaultTeacherUser: User = {
+  id: 'user-teacher-1',
+  udiseCode: '18000000001',
+  name: 'Senior Teacher (Marks Entry)',
+  role: 'teacher',
+  passwordHash: DEFAULT_ADMIN_HASH,
+  salt: DEFAULT_ADMIN_SALT,
+  mustChangePassword: false,
+  failedAttempts: 0,
+  active: true,
+};
+
+const initialUsers: User[] = [defaultAdminUser, defaultTeacherUser];
 
 const defaultMarksEntryGuidelines: string[] = [
   'Do not enter any calculated weightage marks.',
@@ -320,17 +408,23 @@ function parseRouteFromUrl(): RouteState {
   const hash = window.location.hash.replace(/^#\/?/, '') || 'dashboard';
   const parts = hash.split('/').filter(Boolean);
 
-  const mainTab = (parts[0] || 'dashboard') as NavigationTab;
   const validTabs: NavigationTab[] = [
+    'login',
+    'forgot-password',
     'dashboard',
     'marks-entry',
     'result',
     'exam-setup',
     'checklist',
     'final-submit',
+    'users',
   ];
 
   const tab = validTabs.includes(mainTab) ? mainTab : 'dashboard';
+
+  if (tab === 'login' || tab === 'forgot-password' || tab === 'users') {
+    return { tab };
+  }
 
   if (tab === 'result') {
     // #/result
@@ -411,6 +505,20 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const [isSupportEditOpen, setIsSupportEditOpen] = useState(false);
+  const [isSupportModalOpen, setIsSupportModalOpen] = useState(false);
+
+  // Authentication & Session
+  const [session, setSession] = useState<AuthSession | null>(() => loadStoredSession());
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    const s = loadStoredSession();
+    return s ? s.user : null;
+  });
+  const [users, setUsers] = useState<User[]>(() => initialUsers);
+  const [authAuditLogs, setAuthAuditLogs] = useState<AuthAuditLog[]>([]);
+  const [otpDeliveryMode, setOtpDeliveryMode] = useState<'demo' | 'live'>('demo');
+  const [defaultFirstTimePassword, setDefaultFirstTimePassword] = useState('123456');
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+  const [isForcedPasswordChange, setIsForcedPasswordChange] = useState(false);
 
   // Core Data
   const [schoolInfo, setSchoolInfo] = useState<SchoolInfo>(defaultSchoolInfo);
@@ -421,7 +529,7 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [examTypes, setExamTypes] = useState<ExamType[]>(initialExamTypes);
   const [exams, setExams] = useState<ExamRecord[]>(() => generateSeedExams());
 
-  // Students & Marks Status (Step 3)
+  // Students & Marks Status (Step 3 & Roll numbering)
   const [students, setStudents] = useState<Student[]>(() => initialStudents);
   const [examStudents, setExamStudents] = useState<Record<string, string[]>>(() =>
     generateSeedExamStudents()
@@ -515,19 +623,87 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     navigateTo(path);
   };
 
-  // Load from LocalStorage
+  // Enforce password change when flagged
+  useEffect(() => {
+    if (currentUser?.mustChangePassword) {
+      setIsForcedPasswordChange(true);
+      setIsChangePasswordOpen(true);
+    } else {
+      setIsForcedPasswordChange(false);
+    }
+  }, [currentUser]);
+
+  // Route protection: redirect unauthenticated users to /login
+  useEffect(() => {
+    if (!currentUser && currentRoute.tab !== 'login' && currentRoute.tab !== 'forgot-password') {
+      navigateTo('/login');
+    }
+  }, [currentUser, currentRoute.tab]);
+
+  // Inactivity auto-logout: 30 minutes, warning at 29 minutes
+  useEffect(() => {
+    if (!currentUser) return;
+
+    let warningTimer: any = null;
+    let logoutTimer: any = null;
+
+    const resetTimers = () => {
+      if (warningTimer) clearTimeout(warningTimer);
+      if (logoutTimer) clearTimeout(logoutTimer);
+
+      warningTimer = setTimeout(() => {
+        addToast(
+          'You will be automatically logged out in 1 minute due to inactivity. Move mouse or press any key to stay signed in.',
+          'info',
+          undefined,
+          undefined,
+          12000
+        );
+      }, 29 * 60 * 1000);
+
+      logoutTimer = setTimeout(() => {
+        logout();
+        addToast('Session expired due to 30 minutes of inactivity. Please log in again.', 'info');
+      }, 30 * 60 * 1000);
+    };
+
+    const activityEvents = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
+    const handleActivity = () => {
+      resetTimers();
+    };
+
+    activityEvents.forEach((ev) => window.addEventListener(ev, handleActivity));
+    resetTimers();
+
+    return () => {
+      if (warningTimer) clearTimeout(warningTimer);
+      if (logoutTimer) clearTimeout(logoutTimer);
+      activityEvents.forEach((ev) => window.removeEventListener(ev, handleActivity));
+    };
+  }, [currentUser]);
+
+  // Load from LocalStorage (with backwards compatibility migration)
   useEffect(() => {
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
+      const stored = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('gopinath_school_portal_data_v4');
       if (stored) {
         const parsed = JSON.parse(stored);
         if (parsed.classes && Array.isArray(parsed.classes)) setClasses(parsed.classes);
         if (parsed.examTypes && Array.isArray(parsed.examTypes)) setExamTypes(parsed.examTypes);
         if (parsed.exams && Array.isArray(parsed.exams)) setExams(parsed.exams);
-        if (parsed.students && Array.isArray(parsed.students)) setStudents(parsed.students);
+        if (parsed.students && Array.isArray(parsed.students)) {
+          // Ensure students have valid roll numbers
+          setStudents(parsed.students);
+        }
         if (parsed.examStudents) setExamStudents(parsed.examStudents);
         if (parsed.marksStatus) setMarksStatus(parsed.marksStatus);
-        if (parsed.schoolInfo) setSchoolInfo(parsed.schoolInfo);
+        if (parsed.schoolInfo) {
+          setSchoolInfo({
+            ...defaultSchoolInfo,
+            ...parsed.schoolInfo,
+            udiseCode: parsed.schoolInfo.udiseCode || DEFAULT_ADMIN_UDISE,
+          });
+        }
         if (parsed.supportContact) setSupportContact(parsed.supportContact);
         if (parsed.subjects && Array.isArray(parsed.subjects)) setSubjects(parsed.subjects);
         if (parsed.marks && Array.isArray(parsed.marks)) setMarks(parsed.marks);
@@ -536,6 +712,27 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         if (parsed.marksEntryGuidelines && Array.isArray(parsed.marksEntryGuidelines)) setMarksEntryGuidelines(parsed.marksEntryGuidelines);
         if (parsed.resultSettings) {
           setResultSettings(migrateResultSettings(parsed.resultSettings));
+        }
+
+        // Migrate users collection
+        if (parsed.users && Array.isArray(parsed.users) && parsed.users.length > 0) {
+          const migratedUsers: User[] = parsed.users.map((u: any) => ({
+            ...u,
+            udiseCode: u.udiseCode || u.institutionCode || DEFAULT_ADMIN_UDISE,
+          }));
+          setUsers(migratedUsers);
+        } else {
+          setUsers(initialUsers);
+        }
+
+        if (parsed.authAuditLogs && Array.isArray(parsed.authAuditLogs)) {
+          setAuthAuditLogs(parsed.authAuditLogs);
+        }
+        if (parsed.otpDeliveryMode) {
+          setOtpDeliveryMode(parsed.otpDeliveryMode);
+        }
+        if (parsed.defaultFirstTimePassword) {
+          setDefaultFirstTimePassword(parsed.defaultFirstTimePassword);
         }
       }
     } catch (e) {
@@ -561,6 +758,10 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         studentExamStatuses,
         marksAuditLogs,
         marksEntryGuidelines,
+        users,
+        authAuditLogs,
+        otpDeliveryMode,
+        defaultFirstTimePassword,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch (e) {
@@ -581,11 +782,32 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     studentExamStatuses,
     marksAuditLogs,
     marksEntryGuidelines,
+    users,
+    authAuditLogs,
+    otpDeliveryMode,
+    defaultFirstTimePassword,
   ]);
 
   // School & Support Updaters
   const updateSchoolInfo = (info: Partial<SchoolInfo>) => {
-    setSchoolInfo((prev) => ({ ...prev, ...info }));
+    setSchoolInfo((prev) => {
+      const updated = { ...prev, ...info };
+      // If UDISE Code changed, keep admin user's login identifier in sync
+      if (info.udiseCode && info.udiseCode !== prev.udiseCode) {
+        setUsers((prevUsers) =>
+          prevUsers.map((u) => {
+            if (u.role === 'admin' && (u.udiseCode === prev.udiseCode || u.udiseCode === '18000000000')) {
+              return { ...u, udiseCode: info.udiseCode! };
+            }
+            return u;
+          })
+        );
+        if (currentUser?.role === 'admin') {
+          setCurrentUser((u) => (u ? { ...u, udiseCode: info.udiseCode! } : null));
+        }
+      }
+      return updated;
+    });
     addToast('School information updated');
   };
 
@@ -784,15 +1006,40 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     if (!exam) return [];
 
     let enrolledIds = examStudents[examId];
+    let list: Student[] = [];
     if (!enrolledIds) {
-      // If not yet explicitly set, find students belonging to this class
-      return students.filter((s) => s.classId === exam.classId && s.active);
+      list = students.filter((s) => s.classId === exam.classId && s.active);
+    } else {
+      list = enrolledIds
+        .map((id) => students.find((s) => s.id === id))
+        .filter((s): s is Student => Boolean(s && s.active));
     }
+    return sortByRollNo(list);
+  };
 
-    // Return student records in enrolledIds order
-    return enrolledIds
-      .map((id) => students.find((s) => s.id === id))
-      .filter((s): s is Student => Boolean(s && s.active));
+  const getOrderedExamStudents = useCallback(
+    (examId: string): Student[] => {
+      return getOrderedExamStudentsUtil(
+        examId,
+        students,
+        examStudents,
+        studentExamStatuses
+      );
+    },
+    [students, examStudents, studentExamStatuses]
+  );
+
+  const updateStudentRollNos = (updates: { studentId: string; rollNo: string }[]) => {
+    const updateMap = new Map(updates.map((u) => [u.studentId, u.rollNo]));
+    setStudents((prev) =>
+      prev.map((s) => {
+        if (updateMap.has(s.id)) {
+          return { ...s, rollNo: updateMap.get(s.id)! };
+        }
+        return s;
+      })
+    );
+    addToast(`Updated roll numbers for ${updates.length} students.`, 'success');
   };
 
   const createStudent = (
@@ -906,10 +1153,57 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     sourceAcademicYear: string,
     studentIds: string[]
   ): number => {
+    const exam = exams.find((e) => e.id === targetExamId);
+    const targetClassId = exam?.classId || sourceClassId;
+    const targetAcademicYear = exam?.academicYear || sourceAcademicYear;
+
+    let finalEnrolledIds: string[] = [];
     let addedCount = 0;
+
+    // If source class or year differs from target, clone to new class & session with sequential roll numbers
+    if (sourceClassId !== targetClassId || sourceAcademicYear !== targetAcademicYear) {
+      let currentNextRoll = getHighestRollNo(students, targetClassId, targetAcademicYear) + 1;
+      const newStudentRecords: Student[] = [];
+
+      studentIds.forEach((sId) => {
+        const sourceStu = students.find((s) => s.id === sId);
+        if (!sourceStu) return;
+
+        const existingInTarget = students.find(
+          (s) =>
+            s.registrationNo === sourceStu.registrationNo &&
+            s.classId === targetClassId &&
+            s.academicYear === targetAcademicYear &&
+            s.active !== false
+        );
+
+        if (existingInTarget) {
+          finalEnrolledIds.push(existingInTarget.id);
+        } else {
+          const newId = `stu-${targetClassId}-${Date.now().toString().slice(-6)}-${finalEnrolledIds.length}`;
+          const newStudent: Student = {
+            ...sourceStu,
+            id: newId,
+            classId: targetClassId,
+            academicYear: targetAcademicYear,
+            rollNo: String(currentNextRoll++),
+            active: true,
+          };
+          newStudentRecords.push(newStudent);
+          finalEnrolledIds.push(newId);
+        }
+      });
+
+      if (newStudentRecords.length > 0) {
+        setStudents((prev) => [...prev, ...newStudentRecords]);
+      }
+    } else {
+      finalEnrolledIds = [...studentIds];
+    }
+
     setExamStudents((prev) => {
       const existing = prev[targetExamId] || [];
-      const newItems = studentIds.filter((id) => !existing.includes(id));
+      const newItems = finalEnrolledIds.filter((id) => !existing.includes(id));
       addedCount = newItems.length;
       return { ...prev, [targetExamId]: [...existing, ...newItems] };
     });
@@ -917,7 +1211,7 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     // Initialize marks status
     setMarksStatus((prev) => {
       const updated = { ...prev };
-      studentIds.forEach((id) => {
+      finalEnrolledIds.forEach((id) => {
         const key = `${targetExamId}_${id}`;
         if (!updated[key]) {
           updated[key] = 'not_completed';
@@ -1290,10 +1584,322 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   };
 
+  // ----------------------------------------------------------------
+  // Authentication & User Management (Step 5 & 6)
+  // ----------------------------------------------------------------
+  const login = async (
+    udiseCode: string,
+    passwordInput: string,
+    keepSignedIn = false
+  ): Promise<{ success: boolean; error?: string; lockedSeconds?: number }> => {
+    const cleanCode = udiseCode.trim().toUpperCase();
+    const user = users.find(
+      (u) => (u.udiseCode || u.institutionCode || '').toUpperCase() === cleanCode
+    );
+
+    if (!user) {
+      const logEntry: AuthAuditLog = {
+        id: `log-${Date.now()}`,
+        type: 'login_failure',
+        udiseCode: cleanCode,
+        timestamp: new Date().toISOString(),
+        details: 'Invalid School UDISE Code',
+      };
+      setAuthAuditLogs((prev) => [logEntry, ...prev.slice(0, 99)]);
+      return { success: false, error: 'Invalid School UDISE Code or password' };
+    }
+
+    if (!user.active) {
+      return { success: false, error: 'This user account is inactive. Please contact the administrator.' };
+    }
+
+    // Check account lockout
+    if (user.lockedUntil) {
+      const lockTime = new Date(user.lockedUntil).getTime();
+      const now = Date.now();
+      if (now < lockTime) {
+        const remainingSeconds = Math.ceil((lockTime - now) / 1000);
+        return {
+          success: false,
+          error: `Account is temporarily locked. Try again in ${remainingSeconds}s.`,
+          lockedSeconds: remainingSeconds,
+        };
+      }
+    }
+
+    const isValid = await verifyPassword(passwordInput, user.passwordHash, user.salt);
+    if (!isValid) {
+      const newAttempts = (user.failedAttempts || 0) + 1;
+      let lockedUntil: string | null = null;
+      let lockedSeconds: number | undefined = undefined;
+
+      if (newAttempts >= 5) {
+        // Lock for 60 seconds
+        lockedSeconds = 60;
+        lockedUntil = new Date(Date.now() + 60 * 1000).toISOString();
+      }
+
+      const updatedUser: User = {
+        ...user,
+        failedAttempts: newAttempts,
+        lockedUntil,
+      };
+
+      setUsers((prev) => prev.map((u) => (u.id === user.id ? updatedUser : u)));
+
+      const logEntry: AuthAuditLog = {
+        id: `log-${Date.now()}`,
+        type: 'login_failure',
+        udiseCode: cleanCode,
+        userName: user.name,
+        timestamp: new Date().toISOString(),
+        details: lockedUntil ? 'Account locked after 5 failed attempts' : `Failed attempt #${newAttempts}`,
+      };
+      setAuthAuditLogs((prev) => [logEntry, ...prev.slice(0, 99)]);
+
+      if (lockedUntil) {
+        return {
+          success: false,
+          error: `Account locked due to 5 consecutive failed attempts. Try again in 60s.`,
+          lockedSeconds: 60,
+        };
+      }
+
+      return {
+        success: false,
+        error: `Invalid School UDISE Code or password. (${5 - newAttempts} attempt(s) remaining)`,
+      };
+    }
+
+    // Successful login!
+    const updatedUser: User = {
+      ...user,
+      failedAttempts: 0,
+      lockedUntil: null,
+      lastLoginAt: new Date().toISOString(),
+    };
+    setUsers((prev) => prev.map((u) => (u.id === user.id ? updatedUser : u)));
+    setCurrentUser(updatedUser);
+
+    const sessionDurationMs = keepSignedIn ? 7 * 24 * 3600 * 1000 : 8 * 3600 * 1000;
+    const newSession: AuthSession = {
+      userId: updatedUser.id,
+      user: updatedUser,
+      token: `token_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+      expiresAt: new Date(Date.now() + sessionDurationMs).toISOString(),
+      keepSignedIn,
+      lastActivityAt: new Date().toISOString(),
+    };
+
+    setSession(newSession);
+    saveStoredSession(newSession);
+
+    const logEntry: AuthAuditLog = {
+      id: `log-${Date.now()}`,
+      type: 'login_success',
+      udiseCode: cleanCode,
+      userName: updatedUser.name,
+      timestamp: new Date().toISOString(),
+      details: keepSignedIn ? 'Signed in (7 days session)' : 'Signed in (8 hours session)',
+    };
+    setAuthAuditLogs((prev) => [logEntry, ...prev.slice(0, 99)]);
+
+    return { success: true };
+  };
+
+  const logout = () => {
+    if (currentUser) {
+      const logEntry: AuthAuditLog = {
+        id: `log-${Date.now()}`,
+        type: 'logout',
+        udiseCode: currentUser.udiseCode,
+        userName: currentUser.name,
+        timestamp: new Date().toISOString(),
+      };
+      setAuthAuditLogs((prev) => [logEntry, ...prev.slice(0, 99)]);
+    }
+
+    clearStoredSession();
+    setSession(null);
+    setCurrentUser(null);
+    setIsLogoutModalOpen(false);
+    navigateTo('/login');
+    addToast('You have been logged out successfully.', 'info');
+  };
+
+  const changePassword = async (
+    userId: string,
+    newPassword: string,
+    currentPassword?: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    const user = users.find((u) => u.id === userId);
+    if (!user) return { success: false, error: 'User not found' };
+
+    if (currentPassword) {
+      const isValid = await verifyPassword(currentPassword, user.passwordHash, user.salt);
+      if (!isValid) return { success: false, error: 'Current password is incorrect' };
+    }
+
+    const salt = generateSalt(16);
+    const passwordHash = await hashPassword(newPassword, salt);
+
+    const updatedUser: User = {
+      ...user,
+      passwordHash,
+      salt,
+      mustChangePassword: false,
+      failedAttempts: 0,
+      lockedUntil: null,
+    };
+
+    setUsers((prev) => prev.map((u) => (u.id === userId ? updatedUser : u)));
+    if (currentUser?.id === userId) {
+      setCurrentUser(updatedUser);
+      if (session) {
+        const updatedSession = { ...session, user: updatedUser };
+        setSession(updatedSession);
+        saveStoredSession(updatedSession);
+      }
+    }
+
+    setIsForcedPasswordChange(false);
+    setIsChangePasswordOpen(false);
+
+    const logEntry: AuthAuditLog = {
+      id: `log-${Date.now()}`,
+      type: 'password_change',
+      udiseCode: user.udiseCode,
+      userName: user.name,
+      timestamp: new Date().toISOString(),
+      details: 'Password updated successfully',
+    };
+    setAuthAuditLogs((prev) => [logEntry, ...prev.slice(0, 99)]);
+
+    return { success: true };
+  };
+
+  const resetUserPassword = async (userId: string, tempPassword = '123456'): Promise<boolean> => {
+    const user = users.find((u) => u.id === userId);
+    if (!user) return false;
+
+    const salt = generateSalt(16);
+    const passwordHash = await hashPassword(tempPassword, salt);
+
+    const updatedUser: User = {
+      ...user,
+      passwordHash,
+      salt,
+      mustChangePassword: true,
+      failedAttempts: 0,
+      lockedUntil: null,
+    };
+
+    setUsers((prev) => prev.map((u) => (u.id === userId ? updatedUser : u)));
+
+    const logEntry: AuthAuditLog = {
+      id: `log-${Date.now()}`,
+      type: 'password_reset',
+      udiseCode: user.udiseCode,
+      userName: user.name,
+      timestamp: new Date().toISOString(),
+      details: `Password reset to temporary password (${tempPassword})`,
+    };
+    setAuthAuditLogs((prev) => [logEntry, ...prev.slice(0, 99)]);
+
+    return true;
+  };
+
+  const resetUserPasswordByCode = async (
+    udiseCode: string,
+    newPassword: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    const cleanCode = udiseCode.trim().toUpperCase();
+    const user = users.find(
+      (u) => (u.udiseCode || u.institutionCode || '').toUpperCase() === cleanCode
+    );
+    if (!user) return { success: false, error: 'School UDISE Code not found' };
+
+    const salt = generateSalt(16);
+    const passwordHash = await hashPassword(newPassword, salt);
+
+    const updatedUser: User = {
+      ...user,
+      passwordHash,
+      salt,
+      mustChangePassword: false,
+      failedAttempts: 0,
+      lockedUntil: null,
+    };
+
+    setUsers((prev) => prev.map((u) => (u.id === user.id ? updatedUser : u)));
+
+    const logEntry: AuthAuditLog = {
+      id: `log-${Date.now()}`,
+      type: 'password_reset',
+      udiseCode: user.udiseCode,
+      userName: user.name,
+      timestamp: new Date().toISOString(),
+      details: 'Password reset via OTP verification',
+    };
+    setAuthAuditLogs((prev) => [logEntry, ...prev.slice(0, 99)]);
+
+    return { success: true };
+  };
+
+  const addUser = async (
+    userData: Omit<User, 'id' | 'passwordHash' | 'salt' | 'failedAttempts'>,
+    initialPassword = '123456'
+  ): Promise<User> => {
+    const salt = generateSalt(16);
+    const passwordHash = await hashPassword(initialPassword, salt);
+
+    const newUser: User = {
+      ...userData,
+      id: `user-${Date.now().toString(36)}`,
+      passwordHash,
+      salt,
+      failedAttempts: 0,
+    };
+
+    setUsers((prev) => [...prev, newUser]);
+    return newUser;
+  };
+
+  const updateUser = (userId: string, updates: Partial<User>) => {
+    setUsers((prev) =>
+      prev.map((u) => {
+        if (u.id === userId) {
+          const updated = { ...u, ...updates };
+          if (currentUser?.id === userId) {
+            setCurrentUser(updated);
+            if (session) {
+              const updatedSession = { ...session, user: updated };
+              setSession(updatedSession);
+              saveStoredSession(updatedSession);
+            }
+          }
+          return updated;
+        }
+        return u;
+      })
+    );
+  };
+
+  const deleteUser = (userId: string) => {
+    if (currentUser?.id === userId) {
+      addToast('Cannot delete currently logged in user.', 'error');
+      return;
+    }
+    setUsers((prev) => prev.filter((u) => u.id !== userId));
+    addToast('User deleted successfully.', 'info');
+  };
+
   // Backup & Restore
   const exportBackup = () => {
+    // Sanitize users to strip passwordHash and salt
+    const sanitizedUsers = users.map(({ passwordHash, salt, ...rest }) => rest);
     const backupData = {
-      version: '4.0',
+      version: '5.0',
       exportedAt: new Date().toISOString(),
       schoolInfo,
       supportContact,
@@ -1309,6 +1915,7 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       studentExamStatuses,
       marksAuditLogs,
       marksEntryGuidelines,
+      users: sanitizedUsers,
     };
     const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(
       JSON.stringify(backupData, null, 2)
@@ -1372,6 +1979,11 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setStudentExamStatuses({});
     setMarksAuditLogs([]);
     setMarksEntryGuidelines(defaultMarksEntryGuidelines);
+    setUsers(initialUsers);
+    setAuthAuditLogs([]);
+    clearStoredSession();
+    setCurrentUser(null);
+    setSession(null);
     localStorage.removeItem(STORAGE_KEY);
     addToast('Reset to default seed data', 'info');
   };
@@ -1388,6 +2000,28 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         setIsLogoutModalOpen,
         isSupportEditOpen,
         setIsSupportEditOpen,
+        isSupportModalOpen,
+        setIsSupportModalOpen,
+        currentUser,
+        session,
+        users,
+        authAuditLogs,
+        otpDeliveryMode,
+        setOtpDeliveryMode,
+        defaultFirstTimePassword,
+        setDefaultFirstTimePassword,
+        isChangePasswordOpen,
+        setIsChangePasswordOpen,
+        isForcedPasswordChange,
+        setIsForcedPasswordChange,
+        login,
+        logout,
+        changePassword,
+        resetUserPassword,
+        resetUserPasswordByCode,
+        addUser,
+        updateUser,
+        deleteUser,
         schoolInfo,
         updateSchoolInfo,
         supportContact,
@@ -1411,6 +2045,8 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         examStudents,
         marksStatus,
         getStudentsForExam,
+        getOrderedExamStudents,
+        updateStudentRollNos,
         createStudent,
         updateStudent,
         deleteStudent,

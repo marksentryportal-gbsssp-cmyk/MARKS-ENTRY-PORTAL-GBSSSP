@@ -20,6 +20,7 @@ import { NextExamSelector } from './NextExamSelector';
 import { EditStudentModal } from './EditStudentModal';
 import { ConfirmSubmitModal } from './ConfirmSubmitModal';
 import { getExamStatus } from '../../utils/dateUtils';
+import { getNextStudent } from '../../utils/rollNoUtils';
 
 interface CandidateMarksEntryPageProps {
   classId: string;
@@ -39,7 +40,8 @@ export const CandidateMarksEntryPage: React.FC<CandidateMarksEntryPageProps> = (
     students,
     subjects,
     marks,
-    getStudentsForExam,
+    marksStatus,
+    getOrderedExamStudents,
     getMarksStatus,
     getStudentExamStatus,
     saveCandidateMarks,
@@ -58,8 +60,15 @@ export const CandidateMarksEntryPage: React.FC<CandidateMarksEntryPageProps> = (
   };
 
   const currentExam = exams.find((e) => e.id === examId);
-  const examStudentList = useMemo(() => getStudentsForExam(examId), [examId, students]);
+  // Shared ordered list strictly by Roll No. numerically ascending
+  const examStudentList = useMemo(
+    () => getOrderedExamStudents(examId),
+    [examId, getOrderedExamStudents]
+  );
   const currentStudent = students.find((s) => s.id === studentId);
+
+  // Skip already completed students toggle state
+  const [skipCompleted, setSkipCompleted] = useState<boolean>(false);
 
   // Position in student roster
   const currentIndex = examStudentList.findIndex((s) => s.id === studentId);
@@ -598,33 +607,36 @@ export const CandidateMarksEntryPage: React.FC<CandidateMarksEntryPageProps> = (
       }
 
       if (pendingSubmitAction === 'submit_and_next') {
-        // Find next student with status !== 'completed'
-        let nextIncompleteStudent: Student | null = null;
+        const nextStudent = getNextStudent(
+          currentStudent,
+          examStudentList,
+          marksStatus,
+          examId,
+          skipCompleted
+        );
 
-        // Check students after currentIndex
-        for (let i = currentIndex + 1; i < examStudentList.length; i++) {
-          const s = examStudentList[i];
-          if (getMarksStatus(examId, s.id) !== 'completed') {
-            nextIncompleteStudent = s;
-            break;
-          }
-        }
-
-        // Wrap around from beginning to currentIndex - 1
-        if (!nextIncompleteStudent) {
-          for (let i = 0; i < currentIndex; i++) {
-            const s = examStudentList[i];
-            if (getMarksStatus(examId, s.id) !== 'completed') {
-              nextIncompleteStudent = s;
-              break;
-            }
-          }
-        }
-
-        if (nextIncompleteStudent) {
-          navigateTo(`/marks-entry/${classId}/${examId}/${nextIncompleteStudent.id}`);
+        if (nextStudent) {
+          navigateTo(`/marks-entry/${classId}/${examId}/${nextStudent.id}`);
         } else {
-          addToast('All students completed', 'success');
+          // Reached end of student list! Never wrap back to Roll 1.
+          // Check if there are any pending students earlier in the list
+          const firstPendingStudent = examStudentList.find(
+            (s) =>
+              s.id !== currentStudent.id &&
+              (marksStatus[`${examId}_${s.id}`] || getMarksStatus(examId, s.id)) !== 'completed'
+          );
+
+          if (firstPendingStudent) {
+            addToast(
+              'All students done up to the last Roll No.',
+              'info',
+              'Go to first pending student',
+              () => navigateTo(`/marks-entry/${classId}/${examId}/${firstPendingStudent.id}`),
+              12000
+            );
+          } else {
+            addToast('All students done up to the last Roll No.', 'success');
+          }
           navigateTo(`/marks-entry/${classId}/${examId}`);
         }
       } else {
@@ -662,16 +674,24 @@ export const CandidateMarksEntryPage: React.FC<CandidateMarksEntryPageProps> = (
     if (currentIndex > 0) {
       const prevStudent = examStudentList[currentIndex - 1];
       navigateTo(`/marks-entry/${classId}/${examId}/${prevStudent.id}`);
+    } else {
+      addToast('First candidate in roster reached.', 'info');
     }
   };
 
   const handleGoToNextStudent = () => {
-    if (currentIndex < examStudentList.length - 1) {
-      const nextStudent = examStudentList[currentIndex + 1];
+    const nextStudent = getNextStudent(
+      currentStudent,
+      examStudentList,
+      marksStatus,
+      examId,
+      skipCompleted
+    );
+
+    if (nextStudent) {
       navigateTo(`/marks-entry/${classId}/${examId}/${nextStudent.id}`);
     } else {
       addToast('Reached end of student roster for this examination.', 'info');
-      navigateTo(`/marks-entry/${classId}/${examId}`);
     }
   };
 
@@ -798,6 +818,19 @@ export const CandidateMarksEntryPage: React.FC<CandidateMarksEntryPageProps> = (
         nextExamName={nextExam ? nextExam.name : null}
         disabled={isReadOnly}
       />
+
+      {/* 4.5 Skip already completed students toggle */}
+      <div className="flex items-center justify-center gap-2 pt-2">
+        <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer select-none bg-white px-3.5 py-1.5 rounded-full border border-slate-300 hover:border-purple-400 shadow-2xs transition-colors">
+          <input
+            type="checkbox"
+            checked={skipCompleted}
+            onChange={(e) => setSkipCompleted(e.target.checked)}
+            className="w-4 h-4 text-purple-600 rounded border-slate-300 focus:ring-purple-500 cursor-pointer"
+          />
+          <span>Skip already completed students</span>
+        </label>
+      </div>
 
       {/* 5. BOTTOM BUTTONS CENTERED */}
       <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">

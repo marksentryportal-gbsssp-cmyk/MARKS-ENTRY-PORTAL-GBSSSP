@@ -1,10 +1,26 @@
 /**
- * Input validators and formatters for authentication
+ * Input validators and formatters for authentication and UDISE code
  */
 
+/**
+ * Strips any non-digit characters and limits to exactly 11 digits
+ */
+export function sanitizeUdiseCode(code: string): string {
+  if (!code) return '';
+  return code.replace(/\D/g, '').slice(0, 11);
+}
+
+/**
+ * Validates that the School UDISE Code is exactly 11 numeric digits
+ */
+export function isValidUdiseCode(code: string): boolean {
+  if (!code) return false;
+  return /^\d{11}$/.test(code.trim());
+}
+
+// Deprecated alias for backward compatibility
 export function sanitizeInstitutionCode(code: string): string {
-  // Allow letters and numbers, max 7 characters, uppercase
-  return code.replace(/[^a-zA-Z0-9]/g, '').slice(0, 7).toUpperCase();
+  return sanitizeUdiseCode(code);
 }
 
 export function validatePasswordCriteria(password: string): {

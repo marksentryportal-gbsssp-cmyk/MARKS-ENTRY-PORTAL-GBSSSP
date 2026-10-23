@@ -7,10 +7,10 @@ interface RateLimitTracker {
   firstRequestTime: number;
 }
 
-// In-memory rate limiting map: institutionCode -> { count, firstRequestTime }
+// In-memory rate limiting map: udiseCode -> { count, firstRequestTime }
 const rateLimitMap = new Map<string, RateLimitTracker>();
 
-// Active OTPs in memory: institutionCode -> OtpRequest
+// Active OTPs in memory: udiseCode -> OtpRequest
 const activeOtpMap = new Map<string, OtpRequest>();
 
 /**
@@ -42,17 +42,17 @@ export function maskEmail(email: string): string {
 /**
  * Check hourly rate limit: maximum 5 requests per hour
  */
-export function checkOtpRateLimit(institutionCode: string): { allowed: boolean; waitMinutes?: number } {
+export function checkOtpRateLimit(udiseCode: string): { allowed: boolean; waitMinutes?: number } {
   const now = Date.now();
   const oneHour = 60 * 60 * 1000;
-  const record = rateLimitMap.get(institutionCode);
+  const record = rateLimitMap.get(udiseCode);
 
   if (!record) {
     return { allowed: true };
   }
 
   if (now - record.firstRequestTime > oneHour) {
-    rateLimitMap.delete(institutionCode);
+    rateLimitMap.delete(udiseCode);
     return { allowed: true };
   }
 
@@ -68,11 +68,11 @@ export function checkOtpRateLimit(institutionCode: string): { allowed: boolean; 
 /**
  * Record a new OTP request for rate limiting
  */
-function recordOtpRequest(institutionCode: string) {
+function recordOtpRequest(udiseCode: string) {
   const now = Date.now();
-  const record = rateLimitMap.get(institutionCode);
+  const record = rateLimitMap.get(udiseCode);
   if (!record || now - record.firstRequestTime > 60 * 60 * 1000) {
-    rateLimitMap.set(institutionCode, { count: 1, firstRequestTime: now });
+    rateLimitMap.set(udiseCode, { count: 1, firstRequestTime: now });
   } else {
     record.count += 1;
   }
@@ -97,9 +97,6 @@ export async function sendOtp(
   destination: { phone?: string; email?: string },
   otp: string
 ): Promise<{ success: boolean; message: string }> {
-  // In a future production environment with a backend, call SMS/Email gateway here:
-  // e.g., fetch('/api/send-otp', { method: 'POST', body: JSON.stringify({ channel, destination, otp }) })
-  
   const destinations: string[] = [];
   if (destination.phone) {
     destinations.push(maskPhone(destination.phone));
@@ -116,15 +113,15 @@ export async function sendOtp(
 }
 
 /**
- * Request a new OTP for an institution
+ * Request a new OTP for a school by UDISE code
  */
-export function requestOtpForInstitution(
-  institutionCode: string,
+export function requestOtpForSchool(
+  udiseCode: string,
   destination: { phone?: string; email?: string },
   deliveryMode: OtpDeliveryMode = 'demo'
 ): { success: boolean; otp?: string; message: string; waitMinutes?: number } {
   // 1. Check rate limit
-  const limitCheck = checkOtpRateLimit(institutionCode);
+  const limitCheck = checkOtpRateLimit(udiseCode);
   if (!limitCheck.allowed) {
     return {
       success: false,
@@ -139,16 +136,16 @@ export function requestOtpForInstitution(
   const fiveMinutesMs = 5 * 60 * 1000;
 
   // 3. Store in active OTP map
-  activeOtpMap.set(institutionCode, {
+  activeOtpMap.set(udiseCode, {
     code: otp,
-    institutionCode,
+    udiseCode,
     expiresAt: now + fiveMinutesMs,
     createdAt: now,
     attempts: 0,
   });
 
   // 4. Record rate limit
-  recordOtpRequest(institutionCode);
+  recordOtpRequest(udiseCode);
 
   // 5. Build message
   let message = '';
@@ -170,14 +167,17 @@ export function requestOtpForInstitution(
   };
 }
 
+// Deprecated alias for backward compatibility
+export const requestOtpForInstitution = requestOtpForSchool;
+
 /**
  * Verify OTP entered by the user
  */
 export function verifyOtp(
-  institutionCode: string,
+  udiseCode: string,
   enteredOtp: string
 ): { success: boolean; message: string } {
-  const activeOtp = activeOtpMap.get(institutionCode);
+  const activeOtp = activeOtpMap.get(udiseCode);
 
   if (!activeOtp) {
     return {
@@ -188,7 +188,7 @@ export function verifyOtp(
 
   const now = Date.now();
   if (now > activeOtp.expiresAt) {
-    activeOtpMap.delete(institutionCode);
+    activeOtpMap.delete(udiseCode);
     return {
       success: false,
       message: 'OTP has expired. Please request a new OTP.',
@@ -197,7 +197,7 @@ export function verifyOtp(
 
   activeOtp.attempts += 1;
   if (activeOtp.attempts > 5) {
-    activeOtpMap.delete(institutionCode);
+    activeOtpMap.delete(udiseCode);
     return {
       success: false,
       message: 'Too many incorrect attempts. Please request a new OTP.',
@@ -212,7 +212,7 @@ export function verifyOtp(
   }
 
   // OTP is correct! Remove so it cannot be reused
-  activeOtpMap.delete(institutionCode);
+  activeOtpMap.delete(udiseCode);
   return {
     success: true,
     message: 'OTP verified successfully.',

@@ -208,7 +208,8 @@ export interface StudentResult {
 
 export interface SchoolInfo {
   name: string;
-  code: string;
+  code: string; // ASSEB Code (06H1003)
+  udiseCode: string; // 11-digit School UDISE Code (e.g. 18000000000)
   boardName: string;
   portalTitle: string;
   district: string;
@@ -237,7 +238,8 @@ export type UserRole = 'admin' | 'teacher' | 'viewer';
 
 export interface User {
   id: string;
-  institutionCode: string; // e.g. "06H1003"
+  udiseCode: string; // 11-digit School UDISE Code (e.g. "18000000000")
+  institutionCode?: string; // Legacy field for backwards compatibility migration
   name: string;
   role: UserRole;
   passwordHash: string;
@@ -261,7 +263,7 @@ export interface AuthSession {
 export interface AuthAuditLog {
   id: string;
   type: 'login_success' | 'login_failure' | 'password_change' | 'password_reset' | 'logout';
-  userCode: string;
+  udiseCode: string;
   userName?: string;
   timestamp: string;
   details?: string;
@@ -269,7 +271,7 @@ export interface AuthAuditLog {
 
 export interface OtpRequest {
   code: string;
-  institutionCode: string;
+  udiseCode: string;
   expiresAt: number; // timestamp in ms
   createdAt: number;
   attempts: number;

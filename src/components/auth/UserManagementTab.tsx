@@ -18,7 +18,7 @@ import {
 import { usePortal } from '../../store/portalStore';
 import { User, UserRole } from '../../types';
 import { PasswordInput } from './PasswordInput';
-import { sanitizeInstitutionCode } from '../../utils/validators';
+import { sanitizeUdiseCode, isValidUdiseCode } from '../../utils/validators';
 
 export const UserManagementTab: React.FC = () => {
   const {
@@ -56,20 +56,24 @@ export const UserManagementTab: React.FC = () => {
     e.preventDefault();
     setFormError(null);
 
-    const cleanCode = sanitizeInstitutionCode(userCode);
+    const cleanCode = sanitizeUdiseCode(userCode);
     if (!userName.trim()) {
       setFormError('Please enter user full name.');
       return;
     }
     if (!cleanCode) {
-      setFormError('Please enter institution / user code.');
+      setFormError('Please enter School UDISE Code.');
+      return;
+    }
+    if (!isValidUdiseCode(cleanCode)) {
+      setFormError('School UDISE Code must be 11 digits');
       return;
     }
 
     if (editingUser) {
       updateUser(editingUser.id, {
         name: userName.trim(),
-        institutionCode: cleanCode,
+        udiseCode: cleanCode,
         role: userRole,
       });
       addToast(`User ${userName} updated successfully!`, 'success');
@@ -78,16 +82,16 @@ export const UserManagementTab: React.FC = () => {
     } else {
       // Check duplicate code
       const existing = users.find(
-        (u) => u.institutionCode.toUpperCase() === cleanCode.toUpperCase()
+        (u) => (u.udiseCode || u.institutionCode || '').toUpperCase() === cleanCode.toUpperCase()
       );
       if (existing) {
-        setFormError(`User code "${cleanCode}" is already assigned to ${existing.name}.`);
+        setFormError(`School UDISE Code "${cleanCode}" is already assigned to ${existing.name}.`);
         return;
       }
 
       await addUser(
         {
-          institutionCode: cleanCode,
+          udiseCode: cleanCode,
           name: userName.trim(),
           role: userRole,
           mustChangePassword: true,
@@ -110,7 +114,7 @@ export const UserManagementTab: React.FC = () => {
   const handleOpenEdit = (user: User) => {
     setEditingUser(user);
     setUserName(user.name);
-    setUserCode(user.institutionCode);
+    setUserCode(user.udiseCode || user.institutionCode || '');
     setUserRole(user.role);
     setFormError(null);
     setIsAddUserModalOpen(true);
@@ -133,7 +137,7 @@ export const UserManagementTab: React.FC = () => {
       addToast('You cannot delete your own active administrator account.', 'error');
       return;
     }
-    if (confirm(`Are you sure you want to delete user "${user.name}" (${user.institutionCode})?`)) {
+    if (confirm(`Are you sure you want to delete user "${user.name}" (${user.udiseCode})?`)) {
       deleteUser(user.id);
       addToast(`User ${user.name} removed.`, 'info');
     }
@@ -252,7 +256,7 @@ export const UserManagementTab: React.FC = () => {
             <thead>
               <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
                 <th className="py-3 px-4">User Name</th>
-                <th className="py-3 px-4">Institution / User Code</th>
+                <th className="py-3 px-4">School UDISE Code</th>
                 <th className="py-3 px-4">Role</th>
                 <th className="py-3 px-4">Password Status</th>
                 <th className="py-3 px-4">Account Status</th>
@@ -262,6 +266,7 @@ export const UserManagementTab: React.FC = () => {
             <tbody className="divide-y divide-slate-200">
               {users.map((u) => {
                 const isCurrent = u.id === currentUser?.id;
+                const displayCode = u.udiseCode || u.institutionCode || '18000000000';
                 return (
                   <tr key={u.id} className="hover:bg-slate-50 transition-colors">
                     <td className="py-3 px-4 font-bold text-slate-900 flex items-center gap-2">
@@ -273,7 +278,7 @@ export const UserManagementTab: React.FC = () => {
                       )}
                     </td>
                     <td className="py-3 px-4 font-mono font-semibold text-slate-700">
-                      {u.institutionCode}
+                      {displayCode}
                     </td>
                     <td className="py-3 px-4">
                       <span
@@ -413,7 +418,7 @@ export const UserManagementTab: React.FC = () => {
                       {log.type.replace('_', ' ')}
                     </span>
                     <span className="text-slate-500 ml-2">
-                      User: <strong className="text-slate-700">{log.userCode}</strong>
+                      School UDISE Code: <strong className="text-slate-700">{log.udiseCode}</strong>
                       {log.userName && ` (${log.userName})`}
                     </span>
                     {log.details && (
@@ -469,17 +474,21 @@ export const UserManagementTab: React.FC = () => {
 
               <div className="space-y-1">
                 <label className="block font-bold text-slate-700">
-                  Institution / User Code
+                  School UDISE Code (11 Digits)
                 </label>
                 <input
                   type="text"
-                  maxLength={7}
+                  inputMode="numeric"
+                  maxLength={11}
                   value={userCode}
-                  onChange={(e) => setUserCode(sanitizeInstitutionCode(e.target.value))}
-                  placeholder="e.g. 06H1003 or TEACH01"
-                  className="w-full px-3 py-2 rounded border border-slate-300 text-xs font-mono uppercase focus:border-purple-600 focus:outline-hidden"
+                  onChange={(e) => setUserCode(sanitizeUdiseCode(e.target.value))}
+                  placeholder="e.g. 18000000000"
+                  className="w-full px-3 py-2 rounded border border-slate-300 text-xs font-mono focus:border-purple-600 focus:outline-hidden"
                   required
                 />
+                <p className="text-[11px] text-slate-500">
+                  Must be exactly 11 digits numeric code.
+                </p>
               </div>
 
               <div className="space-y-1">
@@ -551,7 +560,7 @@ export const UserManagementTab: React.FC = () => {
             <div className="p-5 space-y-4 text-xs">
               <p className="text-slate-700 leading-relaxed">
                 Set a temporary password for <strong>{resetModalUser.name}</strong> (
-                <code>{resetModalUser.institutionCode}</code>). The user will be required to change it on their next login.
+                <code>{resetModalUser.udiseCode}</code>). The user will be required to change it on their next login.
               </p>
 
               <div className="space-y-1">

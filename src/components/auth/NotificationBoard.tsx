@@ -42,7 +42,7 @@ export const NotificationBoard: React.FC<NotificationBoardProps> = ({ onOpenSupp
               </div>
               <div className="flex items-start gap-2.5 text-xs text-slate-700 leading-relaxed">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#0f766e] shrink-0 mt-1.5" />
-                <span>All users have to login with their Institution Code and Password.</span>
+                <span>All users have to login with their School UDISE Code and Password.</span>
               </div>
             </>
           )}
