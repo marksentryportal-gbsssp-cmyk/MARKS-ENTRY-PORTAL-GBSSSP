@@ -19,12 +19,23 @@ export const LoginPage: React.FC = () => {
     setIsSupportModalOpen,
   } = usePortal();
 
-  const [udiseCode, setUdiseCode] = useState(schoolInfo.udiseCode || '18000000000');
+  const [udiseCode, setUdiseCode] = useState(
+    schoolInfo.udiseCode && schoolInfo.udiseCode !== '18000000000'
+      ? schoolInfo.udiseCode
+      : '18020200403'
+  );
   const [password, setPassword] = useState('');
   const [keepSignedIn, setKeepSignedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [udiseError, setUdiseError] = useState<string | null>(null);
+
+  // Sync if schoolInfo updates
+  useEffect(() => {
+    if (schoolInfo.udiseCode && schoolInfo.udiseCode !== '18000000000') {
+      setUdiseCode(schoolInfo.udiseCode);
+    }
+  }, [schoolInfo.udiseCode]);
 
   // Lockout countdown timer
   const [lockoutSeconds, setLockoutSeconds] = useState<number>(0);
@@ -303,11 +314,23 @@ export const LoginPage: React.FC = () => {
                     </button>
                   </div>
 
-                  {/* Teal Default Password Note */}
-                  <div className="pt-3 text-center">
-                    <p className="text-[11px] font-semibold text-[#0f766e] bg-teal-50/80 border border-teal-200/60 rounded px-2.5 py-1.5 leading-snug">
-                      Note: The default password for first-time login will be "{defaultFirstTimePassword || '123456'}".
+                  {/* School Credentials Notice with 1-click Auto-fill */}
+                  <div className="pt-3 text-center space-y-2">
+                    <p className="text-[11px] font-semibold text-[#0f766e] bg-teal-50/90 border border-teal-200/80 rounded px-2.5 py-1.5 leading-snug">
+                      School UDISE: <strong className="font-mono text-slate-800">18020200403</strong> &bull; Password: <strong className="font-mono text-slate-800">Gopinath2024@</strong>
                     </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUdiseCode('18020200403');
+                        setPassword('Gopinath2024@');
+                        setErrorMessage(null);
+                        setUdiseError(null);
+                      }}
+                      className="text-[11px] font-bold text-purple-700 hover:text-purple-900 hover:underline cursor-pointer"
+                    >
+                      Click here to auto-fill School Login credentials
+                    </button>
                   </div>
                 </form>
               </div>

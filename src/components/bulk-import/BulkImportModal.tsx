@@ -21,6 +21,7 @@ import {
   normalizeGender,
   StandardHeaderKey,
 } from '../../utils/excelUtils';
+import { getHighestRollNo } from '../../utils/rollNoUtils';
 
 interface BulkImportModalProps {
   isOpen: boolean;
@@ -61,6 +62,8 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
 
   // Parsed and validated rows
   const [previewRows, setPreviewRows] = useState<ParsedRowItem[]>([]);
+  const [rollNoOrderMode, setRollNoOrderMode] = useState<'file' | 'alphabetical'>('file');
+  const [fileHasRollNos, setFileHasRollNos] = useState<boolean>(false);
 
   // Duplicate settings
   const [skipDuplicates, setSkipDuplicates] = useState(true);
@@ -81,12 +84,34 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
   const validateRows = (
     rawRows: any[],
     mappings: Record<string, string>,
-    existingStudents: Student[]
+    existingStudents: Student[],
+    orderMode: 'file' | 'alphabetical' = rollNoOrderMode
   ): ParsedRowItem[] => {
+    // Check if the uploaded file has a mapped rollNo column with values
+    const hasRollInFile = rawRows.some((row) => {
+      const col = mappings['rollNo'];
+      return col && String(row[col] ?? '').trim() !== '';
+    });
+    setFileHasRollNos(hasRollInFile);
+
+    // Starting roll number for auto-assignment (highest existing in class + 1)
+    const startRoll = getHighestRollNo(existingStudents, targetClassId, targetAcademicYear) + 1;
+
+    // Build row list with original index
+    let indexedRows = rawRows.map((rowObj, originalIdx) => ({ rowObj, originalIdx }));
+    if (orderMode === 'alphabetical') {
+      indexedRows.sort((a, b) => {
+        const nameCol = mappings['name'];
+        const nameA = String(nameCol ? a.rowObj[nameCol] || '' : '').trim().toUpperCase();
+        const nameB = String(nameCol ? b.rowObj[nameCol] || '' : '').trim().toUpperCase();
+        return nameA.localeCompare(nameB);
+      });
+    }
+
     const parsedList: ParsedRowItem[] = [];
     const seenRegNosInFile = new Set<string>();
 
-    rawRows.forEach((rowObj, idx) => {
+    indexedRows.forEach(({ rowObj, originalIdx }, sortedIdx) => {
       const getVal = (standardKey: StandardHeaderKey) => {
         const fileCol = mappings[standardKey];
         if (!fileCol) return '';
@@ -101,7 +126,14 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
       const rawDob = getVal('dob');
       const rawGender = getVal('gender');
       const rawSection = String(getVal('section')).trim().toUpperCase() || 'A';
-      const rawRoll = String(getVal('rollNo')).trim() || String(idx + 1).padStart(2, '0');
+
+      // Roll No:
+      // If file has roll numbers and we are in file mode, use it. Otherwise, sequentially assign starting from startRoll
+      let assignedRoll = String(getVal('rollNo')).trim();
+      if (!assignedRoll || orderMode === 'alphabetical') {
+        assignedRoll = String(startRoll + sortedIdx);
+      }
+
       const rawAdm = String(getVal('admissionNo')).trim();
 
       const { dateStr: formattedDob, isValid: isDobValid } = normalizeDateInput(rawDob);
@@ -142,8 +174,8 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
       }
 
       parsedList.push({
-        id: `row-${idx}-${Date.now()}`,
-        rowNumber: idx + 1,
+        id: `row-${originalIdx}-${Date.now()}`,
+        rowNumber: originalIdx + 1,
         registrationNo: rawRegNo,
         name: rawName,
         fatherName: rawFather,
@@ -151,7 +183,7 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
         dob: formattedDob || String(rawDob || ''),
         gender: normalizedGen,
         section: rawSection,
-        rollNo: rawRoll,
+        rollNo: assignedRoll,
         admissionNo: rawAdm,
         status,
         errorMessage,
@@ -199,7 +231,7 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
       setRawSheetRows(jsonRows);
 
       // Validate rows
-      const validated = validateRows(jsonRows, newMappings, students);
+      const validated = validateRows(jsonRows, newMappings, students, rollNoOrderMode);
       setPreviewRows(validated);
       setCurrentStep(2);
     } catch (err) {
@@ -216,7 +248,13 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
   const handleUpdateColumnMapping = (key: string, fileHeader: string) => {
     const updated = { ...columnMappings, [key]: fileHeader };
     setColumnMappings(updated);
-    const revalidated = validateRows(rawSheetRows, updated, students);
+    const revalidated = validateRows(rawSheetRows, updated, students, rollNoOrderMode);
+    setPreviewRows(revalidated);
+  };
+
+  const handleRollNoOrderChange = (mode: 'file' | 'alphabetical') => {
+    setRollNoOrderMode(mode);
+    const revalidated = validateRows(rawSheetRows, columnMappings, students, mode);
     setPreviewRows(revalidated);
   };
 
@@ -431,6 +469,9 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
                 columnMappings={columnMappings}
                 onUpdateColumnMapping={handleUpdateColumnMapping}
                 missingRequiredColumns={missingRequired}
+                rollNoOrderMode={rollNoOrderMode}
+                onChangeRollNoOrder={handleRollNoOrderChange}
+                fileHasRollNos={fileHasRollNos}
               />
             </div>
           )}

@@ -12,6 +12,7 @@ interface MarksComponentInputProps {
   inputRef?: (el: HTMLInputElement | null) => void;
   hasError?: boolean;
   errorMessage?: string;
+  density?: 'compact' | 'comfortable';
 }
 
 export const MarksComponentInput: React.FC<MarksComponentInputProps> = ({
@@ -25,7 +26,10 @@ export const MarksComponentInput: React.FC<MarksComponentInputProps> = ({
   inputRef,
   hasError = false,
   errorMessage,
+  density = 'compact',
 }) => {
+  const isCompact = density === 'compact';
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let raw = e.target.value;
     // Auto convert lowercase 'a' to capital 'A'
@@ -46,8 +50,8 @@ export const MarksComponentInput: React.FC<MarksComponentInputProps> = ({
   const isAbsent = value.trim().toUpperCase() === 'A';
 
   return (
-    <div className="flex flex-col items-center justify-center py-1">
-      <div className="inline-flex items-center gap-2">
+    <div className={`flex flex-col items-center justify-center ${isCompact ? 'py-0.5' : 'py-1'}`}>
+      <div className="inline-flex items-center gap-1.5">
         <div className="relative">
           <input
             ref={inputRef}
@@ -60,7 +64,10 @@ export const MarksComponentInput: React.FC<MarksComponentInputProps> = ({
             placeholder="0 or A"
             aria-invalid={hasError}
             data-has-error={hasError ? 'true' : undefined}
-            className={`w-[130px] sm:w-[160px] md:w-[180px] h-9 px-3 py-1.5 text-center font-mono font-bold text-sm rounded border transition-all ${
+            title={hasError ? errorMessage : undefined}
+            className={`w-[110px] sm:w-[130px] md:w-[150px] ${
+              isCompact ? 'h-7 text-xs px-2 py-0.5' : 'h-8.5 text-sm px-3 py-1'
+            } text-center font-mono font-bold rounded border transition-all ${
               disabled
                 ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed'
                 : hasError
@@ -74,24 +81,25 @@ export const MarksComponentInput: React.FC<MarksComponentInputProps> = ({
           />
 
           {isAbsent && (
-            <span className="absolute -top-2 -right-2 px-1.5 py-0.2 bg-slate-600 text-white text-[9px] font-bold rounded shadow-xs uppercase tracking-wider">
+            <span className="absolute -top-1.5 -right-1.5 px-1 py-0.1 bg-slate-600 text-white text-[8px] font-bold rounded shadow-xs uppercase tracking-wider">
               Absent
             </span>
           )}
         </div>
 
         {/* Out of N Label */}
-        <span className="text-xs font-semibold text-slate-500 whitespace-nowrap min-w-[70px] text-left select-none">
-          Out of <strong className="text-slate-800 font-mono">{maxMarks}</strong>
+        <span className="text-[11px] font-semibold text-slate-500 whitespace-nowrap min-w-[55px] text-left select-none">
+          / <strong className="text-slate-800 font-mono">{maxMarks}</strong>
         </span>
       </div>
 
-      {hasError && errorMessage && (
-        <span className="flex items-center gap-1 text-[11px] text-red-600 font-medium mt-1 animate-in fade-in">
-          <AlertCircle className="w-3 h-3 shrink-0" />
-          <span>{errorMessage}</span>
+      {/* Reserved height for validation error to prevent layout shift */}
+      <div className={`h-3.5 flex items-center justify-center ${hasError ? 'visible' : 'invisible'}`}>
+        <span className="flex items-center gap-0.5 text-[10px] text-red-600 font-medium truncate max-w-[170px]" title={errorMessage}>
+          <AlertCircle className="w-2.5 h-2.5 shrink-0" />
+          <span className="truncate">{errorMessage || 'Invalid marks'}</span>
         </span>
-      )}
+      </div>
     </div>
   );
 };

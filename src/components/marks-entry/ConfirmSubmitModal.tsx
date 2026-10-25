@@ -44,6 +44,20 @@ export const ConfirmSubmitModal: React.FC<ConfirmSubmitModalProps> = ({
   const confirmButtonRef = useRef<HTMLButtonElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
 
+  // Lock body scrolling while the modal is open without shifting the layout
+  useEffect(() => {
+    if (!isOpen) return;
+    const originalOverflow = document.body.style.overflow;
+    const originalGutter = document.body.style.scrollbarGutter;
+    document.body.style.scrollbarGutter = 'stable';
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.body.style.scrollbarGutter = originalGutter;
+    };
+  }, [isOpen]);
+
   // Focus starts on SUBMIT button when opened
   useEffect(() => {
     if (isOpen) {

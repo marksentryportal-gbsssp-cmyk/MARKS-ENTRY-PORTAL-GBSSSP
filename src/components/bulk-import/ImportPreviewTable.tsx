@@ -209,6 +209,33 @@ export const ImportPreviewTable: React.FC<ImportPreviewTableProps> = ({
               </label>
             </div>
           )}
+
+          {/* Roll No Assignment Order */}
+          <div className="flex items-center gap-2 border-l border-slate-200 pl-4">
+            <span className="text-slate-500 font-medium">Roll No Order:</span>
+            <button
+              type="button"
+              onClick={() => onChangeRollNoOrder('file')}
+              className={`px-2 py-0.5 rounded text-[11px] font-semibold border transition-colors ${
+                rollNoOrderMode === 'file'
+                  ? 'bg-teal-50 text-teal-800 border-teal-300'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              {fileHasRollNos ? 'From File' : 'Order in File'}
+            </button>
+            <button
+              type="button"
+              onClick={() => onChangeRollNoOrder('alphabetical')}
+              className={`px-2 py-0.5 rounded text-[11px] font-semibold border transition-colors ${
+                rollNoOrderMode === 'alphabetical'
+                  ? 'bg-teal-50 text-teal-800 border-teal-300'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              Alphabetical (A-Z)
+            </button>
+          </div>
         </div>
 
         {/* Select all valid toggle */}

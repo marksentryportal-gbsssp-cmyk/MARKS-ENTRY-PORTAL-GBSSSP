@@ -26,7 +26,11 @@ export const ForgotPasswordPage: React.FC = () => {
     addToast,
   } = usePortal();
 
-  const [udiseCode, setUdiseCode] = useState(schoolInfo.udiseCode || '18000000000');
+  const [udiseCode, setUdiseCode] = useState(
+    schoolInfo.udiseCode && schoolInfo.udiseCode !== '18000000000'
+      ? schoolInfo.udiseCode
+      : '18020200403'
+  );
   const [otp, setOtp] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');

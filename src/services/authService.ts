@@ -38,13 +38,12 @@ export async function verifyPassword(
  * Standard seed credentials for initial admin
  */
 export const DEFAULT_ADMIN_CODE = '06H1003';
-export const DEFAULT_ADMIN_UDISE = '18000000000';
-export const DEFAULT_ADMIN_PASSWORD = '123456';
+export const DEFAULT_ADMIN_UDISE = '18020200403';
+export const DEFAULT_ADMIN_PASSWORD = 'Gopinath2024@';
 export const DEFAULT_ADMIN_SALT = 'salt_06h1003_secure_seed';
 
-// Pre-computed SHA-256 for "123456:salt_06h1003_secure_seed"
-// Let's also verify/recompute on demand if needed
-export const DEFAULT_ADMIN_HASH = '1f440a2307dece0a80e14ef61019d0e2e92c0192e276b92a4038a8b1ef232f05';
+// Pre-computed SHA-256 for "Gopinath2024@:salt_06h1003_secure_seed"
+export const DEFAULT_ADMIN_HASH = '7f136886cc9a737339a6c44a379224cc3fd34e2490d87c2ef266cb11308f2a6c';
 
 /**
  * Check password strength

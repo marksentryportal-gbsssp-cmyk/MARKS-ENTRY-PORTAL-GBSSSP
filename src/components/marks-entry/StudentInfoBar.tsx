@@ -26,6 +26,8 @@ interface StudentInfoBarProps {
   onOpenEditStudent: () => void;
   onStudentDeleted: () => void;
   isReadOnly?: boolean;
+  density?: 'compact' | 'comfortable';
+  recentlySaved?: boolean;
 }
 
 export const StudentInfoBar: React.FC<StudentInfoBarProps> = ({
@@ -40,8 +42,12 @@ export const StudentInfoBar: React.FC<StudentInfoBarProps> = ({
   onOpenEditStudent,
   onStudentDeleted,
   isReadOnly = false,
+  density = 'compact',
+  recentlySaved = false,
 }) => {
   const { deleteStudentWithAction, getStudentExamCountWithMarks, addToast } = usePortal();
+
+  const isCompact = density === 'compact';
 
   const [isAbsentModalOpen, setIsAbsentModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -67,15 +73,23 @@ export const StudentInfoBar: React.FC<StudentInfoBarProps> = ({
 
   return (
     <>
-      <div className="bg-white rounded-lg border border-slate-200/90 shadow-xs p-4 md:p-5 space-y-4">
+      <div className={`bg-white rounded-lg border border-slate-200/90 shadow-xs ${isCompact ? 'p-3 md:p-3.5 space-y-2.5' : 'p-4 md:p-5 space-y-4'}`}>
         {/* Row 1: Large Teal Examination Heading */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <h2 className="text-lg md:text-xl font-black text-[#0f766e] tracking-tight">
-            Examination : {exam.name}
-          </h2>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className={`${isCompact ? 'text-base md:text-lg' : 'text-lg md:text-xl'} font-black text-[#0f766e] tracking-tight`}>
+              Examination : {exam.name}
+            </h2>
+            {recentlySaved && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full animate-in fade-in duration-150">
+                <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Saved</span>
+              </span>
+            )}
+          </div>
 
           {/* Student Position Counter & Arrow Navigation */}
-          <div className="flex items-center gap-2 self-start sm:self-auto bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1">
+          <div className="flex items-center gap-2 self-start sm:self-auto bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-0.5">
             <button
               type="button"
               disabled={currentIndex <= 0}
@@ -105,30 +119,30 @@ export const StudentInfoBar: React.FC<StudentInfoBarProps> = ({
         </div>
 
         {/* Row 2: Student Metadata Grid (bold teal labels, normal teal values) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 text-xs md:text-sm bg-teal-50/40 p-3.5 rounded-lg border border-teal-100/80">
+        <div className={`grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-xs bg-teal-50/40 ${isCompact ? 'p-2.5' : 'p-3.5'} rounded-lg border border-teal-100/80`}>
           <div>
-            <span className="font-bold text-[#0f766e] block text-[11px] uppercase tracking-wider">
+            <span className="font-bold text-[#0f766e] block text-[10px] uppercase tracking-wider">
               Registration No :
             </span>
-            <span className="text-[#0f766e] font-semibold font-mono tracking-tight select-all">
+            <span className="text-[#0f766e] font-semibold font-mono tracking-tight select-all truncate block text-xs">
               {student.registrationNo}
             </span>
           </div>
 
           <div>
-            <span className="font-bold text-[#0f766e] block text-[11px] uppercase tracking-wider">
+            <span className="font-bold text-[#0f766e] block text-[10px] uppercase tracking-wider">
               Student Name :
             </span>
-            <span className="text-[#0f766e] font-bold">
+            <span className="text-[#0f766e] font-bold truncate block text-xs">
               {student.name}
             </span>
           </div>
 
           <div>
-            <span className="font-bold text-[#0f766e] block text-[11px] uppercase tracking-wider">
+            <span className="font-bold text-[#0f766e] block text-[10px] uppercase tracking-wider">
               Father Name :
             </span>
-            <span className="text-[#0f766e] font-medium">
+            <span className="text-[#0f766e] font-medium truncate block text-xs">
               {student.fatherName}
             </span>
           </div>
@@ -172,7 +186,7 @@ export const StudentInfoBar: React.FC<StudentInfoBarProps> = ({
               type="button"
               disabled={isReadOnly}
               onClick={() => setIsAbsentModalOpen(true)}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-xs font-bold transition-all shadow-2xs border cursor-pointer ${
+              className={`inline-flex items-center gap-1.5 ${isCompact ? 'px-2.5 py-1 text-xs' : 'px-3.5 py-1.5 text-xs'} rounded-md font-bold transition-all shadow-2xs border cursor-pointer ${
                 isAllAbsent
                   ? 'bg-amber-50 text-amber-900 border-amber-400 hover:bg-amber-100 ring-2 ring-amber-300'
                   : 'bg-white text-[#7e22ce] border-[#9333ea] hover:bg-purple-50 disabled:opacity-40 disabled:cursor-not-allowed'
@@ -196,7 +210,7 @@ export const StudentInfoBar: React.FC<StudentInfoBarProps> = ({
               type="button"
               disabled={isReadOnly}
               onClick={onOpenEditStudent}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white text-[#7e22ce] border border-[#9333ea] hover:bg-purple-50 rounded-md text-xs font-bold transition-all shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              className={`inline-flex items-center gap-1.5 ${isCompact ? 'px-2.5 py-1 text-xs' : 'px-3.5 py-1.5 text-xs'} bg-white text-[#7e22ce] border border-[#9333ea] hover:bg-purple-50 rounded-md font-bold transition-all shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer`}
             >
               <Edit2 className="w-3.5 h-3.5 text-[#9333ea]" />
               <span>UPDATE STUDENT</span>
@@ -207,7 +221,7 @@ export const StudentInfoBar: React.FC<StudentInfoBarProps> = ({
               type="button"
               disabled={isReadOnly}
               onClick={() => setIsDeleteModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white text-[#7e22ce] border border-[#9333ea] hover:bg-red-50 hover:text-red-700 hover:border-red-400 rounded-md text-xs font-bold transition-all shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              className={`inline-flex items-center gap-1.5 ${isCompact ? 'px-2.5 py-1 text-xs' : 'px-3.5 py-1.5 text-xs'} bg-white text-[#7e22ce] border border-[#9333ea] hover:bg-red-50 hover:text-red-700 hover:border-red-400 rounded-md font-bold transition-all shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer`}
             >
               <Trash2 className="w-3.5 h-3.5 text-[#9333ea]" />
               <span>DELETE STUDENT</span>

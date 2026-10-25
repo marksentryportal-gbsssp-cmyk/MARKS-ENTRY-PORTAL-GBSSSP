@@ -7,7 +7,7 @@ interface NotificationBoardProps {
 }
 
 export const NotificationBoard: React.FC<NotificationBoardProps> = ({ onOpenSupport }) => {
-  const { notifications, schoolInfo } = usePortal();
+  const { importantNotifications, schoolInfo } = usePortal();
   const currentYear = new Date().getFullYear();
 
   return (
@@ -27,8 +27,8 @@ export const NotificationBoard: React.FC<NotificationBoardProps> = ({ onOpenSupp
 
         {/* Bullet list of notices */}
         <div className="space-y-3.5">
-          {notifications && notifications.length > 0 ? (
-            notifications.map((notice, idx) => (
+          {importantNotifications && importantNotifications.length > 0 ? (
+            importantNotifications.map((notice: string, idx: number) => (
               <div key={idx} className="flex items-start gap-2.5 text-xs text-slate-700 leading-relaxed">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#0f766e] shrink-0 mt-1.5" />
                 <span>{notice}</span>

@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import { CheckCircle2, Award, UserX, AlertCircle } from 'lucide-react';
 import { Subject, ExamRecord } from '../../types';
 import { MarksComponentInput } from './MarksComponentInput';
@@ -13,6 +13,7 @@ export interface SubjectMarksValues {
 interface SubjectMarksTableProps {
   subjects: Subject[];
   exam: ExamRecord;
+  studentId?: string;
   marksState: Record<string, SubjectMarksValues>;
   onMarksChange: (
     subjectId: string,
@@ -22,6 +23,8 @@ interface SubjectMarksTableProps {
   onGradeChange: (subjectId: string, grade: string) => void;
   validationErrors: Record<string, string>;
   disabled?: boolean;
+  density?: 'compact' | 'comfortable';
+  onLastInputEnter?: () => void;
 }
 
 export const ALLOWED_GRADES = ['A+', 'A', 'B+', 'B', 'C', 'D', 'E', 'ABSENT'];
@@ -29,12 +32,17 @@ export const ALLOWED_GRADES = ['A+', 'A', 'B+', 'B', 'C', 'D', 'E', 'ABSENT'];
 export const SubjectMarksTable: React.FC<SubjectMarksTableProps> = ({
   subjects,
   exam,
+  studentId,
   marksState,
   onMarksChange,
   onGradeChange,
   validationErrors,
   disabled = false,
+  density = 'compact',
+  onLastInputEnter,
 }) => {
+  const isCompact = density === 'compact';
+
   // Store refs to inputs for sequential Tab/Enter traversal
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
@@ -54,7 +62,6 @@ export const SubjectMarksTable: React.FC<SubjectMarksTableProps> = ({
       practical = sub.components.practical || 0;
       ia = sub.components.ia || 0;
     } else {
-      // Default: descriptive gets exam default or 100
       descriptive = sub.fullMarks || 100;
     }
 
@@ -72,9 +79,9 @@ export const SubjectMarksTable: React.FC<SubjectMarksTableProps> = ({
     }
   });
 
-  // Auto-focus first empty input on mount
-  useEffect(() => {
-    if (disabled) return;
+  // Focus the first empty input without jumping or scrolling to the top
+  const focusFirstEmptyInput = useCallback(() => {
+    if (disabled || activeInputKeys.length === 0) return;
     const firstEmptyKey = activeInputKeys.find((key) => {
       const [subId, comp] = key.split('_');
       const val = marksState[subId]?.[comp as 'descriptive' | 'practical' | 'ia'];
@@ -82,17 +89,45 @@ export const SubjectMarksTable: React.FC<SubjectMarksTableProps> = ({
     });
 
     const targetKey = firstEmptyKey || activeInputKeys[0];
-    if (targetKey && inputRefs.current[targetKey]) {
-      inputRefs.current[targetKey]?.focus();
+    const el = inputRefs.current[targetKey];
+    if (el) {
+      el.focus({ preventScroll: true });
+      el.select();
+      const rect = el.getBoundingClientRect();
+      if (rect.top < 80 || rect.bottom > window.innerHeight - 80) {
+        el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
     }
-  }, []);
+  }, [activeInputKeys, disabled, marksState]);
+
+  // Focus on student change or mount
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      focusFirstEmptyInput();
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [studentId]);
 
   const handleNextInput = (currentKey: string) => {
     const currentIndex = activeInputKeys.indexOf(currentKey);
-    if (currentIndex !== -1 && currentIndex + 1 < activeInputKeys.length) {
-      const nextKey = activeInputKeys[currentIndex + 1];
-      inputRefs.current[nextKey]?.focus();
-      inputRefs.current[nextKey]?.select();
+    if (currentIndex !== -1) {
+      if (currentIndex + 1 < activeInputKeys.length) {
+        const nextKey = activeInputKeys[currentIndex + 1];
+        const nextEl = inputRefs.current[nextKey];
+        if (nextEl) {
+          nextEl.focus({ preventScroll: true });
+          nextEl.select();
+          const rect = nextEl.getBoundingClientRect();
+          if (rect.top < 80 || rect.bottom > window.innerHeight - 80) {
+            nextEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          }
+        }
+      } else {
+        // Pressed Enter on the LAST input! Trigger confirmation pop-up
+        if (onLastInputEnter) {
+          onLastInputEnter();
+        }
+      }
     }
   };
 
@@ -182,23 +217,23 @@ export const SubjectMarksTable: React.FC<SubjectMarksTableProps> = ({
   return (
     <div className="bg-white rounded-lg border border-slate-200 shadow-xs overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="w-full text-xs text-center border-collapse">
-          <thead>
-            <tr className="bg-slate-100 text-slate-800 font-extrabold uppercase tracking-wide border-b border-slate-200">
-              <th className="py-3 px-4 text-left w-1/4 border-r border-slate-200">
+        <table className="w-full text-xs text-center border-collapse table-fixed">
+          <thead className="sticky top-0 z-10 bg-slate-100 shadow-2xs">
+            <tr className={`text-slate-800 font-extrabold uppercase tracking-wide border-b border-slate-200 ${isCompact ? 'text-[11px]' : 'text-xs'}`}>
+              <th className={`${isCompact ? 'py-2 px-3' : 'py-3 px-4'} text-left w-2/5 md:w-1/4 border-r border-slate-200`}>
                 Subject Name
               </th>
-              <th className="py-3 px-3 w-28 text-center border-r border-slate-200">
-                Subject Code
+              <th className={`${isCompact ? 'py-2 px-2' : 'py-3 px-3'} w-20 text-center border-r border-slate-200`}>
+                Code
               </th>
-              <th className="py-3 px-4 w-1/4 text-center border-r border-slate-200">
+              <th className={`${isCompact ? 'py-2 px-3' : 'py-3 px-4'} w-1/4 text-center border-r border-slate-200`}>
                 Descriptive (Theory)
               </th>
-              <th className="py-3 px-4 w-1/5 text-center border-r border-slate-200">
+              <th className={`${isCompact ? 'py-2 px-3' : 'py-3 px-4'} w-1/5 text-center border-r border-slate-200`}>
                 Practical
               </th>
-              <th className="py-3 px-4 w-1/5 text-center">
-                IA (Internal Assessment)
+              <th className={`${isCompact ? 'py-2 px-3' : 'py-3 px-4'} w-1/5 text-center`}>
+                IA (Internal)
               </th>
             </tr>
           </thead>
@@ -218,6 +253,8 @@ export const SubjectMarksTable: React.FC<SubjectMarksTableProps> = ({
                 <tr
                   key={sub.id}
                   className={`hover:bg-slate-50/80 transition-colors ${
+                    isCompact ? 'h-12' : 'h-14'
+                  } ${
                     rowAbsent
                       ? 'bg-amber-50/40'
                       : rowComplete
@@ -228,12 +265,12 @@ export const SubjectMarksTable: React.FC<SubjectMarksTableProps> = ({
                   }`}
                 >
                   {/* Column 1: Subject Name */}
-                  <td className="py-3 px-4 text-left font-bold text-slate-900 border-r border-slate-200">
+                  <td className={`${isCompact ? 'py-1 px-3' : 'py-2.5 px-4'} text-left font-bold text-slate-900 border-r border-slate-200`}>
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        <span>{sub.name}</span>
+                        <span className="truncate">{sub.name}</span>
                         {sub.type === 'grade' && (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200 shrink-0">
                             <Award className="w-3 h-3 text-purple-600" />
                             Grade
                           </span>
@@ -255,9 +292,9 @@ export const SubjectMarksTable: React.FC<SubjectMarksTableProps> = ({
                   </td>
 
                   {/* Column 2: Subject Code */}
-                  <td className="py-3 px-3 font-mono font-bold text-slate-700 border-r border-slate-200">
+                  <td className={`${isCompact ? 'py-1 px-2' : 'py-2.5 px-3'} font-mono font-bold text-slate-700 border-r border-slate-200`}>
                     {sub.code ? (
-                      <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-200">
+                      <span className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-xs">
                         {sub.code}
                       </span>
                     ) : (
@@ -267,7 +304,7 @@ export const SubjectMarksTable: React.FC<SubjectMarksTableProps> = ({
 
                   {/* If grade type subject, span all component columns */}
                   {sub.type === 'grade' ? (
-                    <td colSpan={3} className="py-3 px-4 text-center">
+                    <td colSpan={3} className={`${isCompact ? 'py-1 px-3' : 'py-2.5 px-4'} text-center`}>
                       <div className="flex items-center justify-center gap-3">
                         <span className="text-xs font-semibold text-slate-600">
                           Select Grade:
@@ -276,7 +313,7 @@ export const SubjectMarksTable: React.FC<SubjectMarksTableProps> = ({
                           disabled={disabled}
                           value={vals.grade || ''}
                           onChange={(e) => onGradeChange(sub.id, e.target.value)}
-                          className="px-3 py-1.5 rounded border border-slate-300 bg-white font-bold text-xs focus:ring-2 focus:ring-[#9333ea] focus:outline-hidden"
+                          className="px-3 py-1 rounded border border-slate-300 bg-white font-bold text-xs focus:ring-2 focus:ring-[#9333ea] focus:outline-hidden"
                         >
                           <option value="">-- Choose Grade --</option>
                           {ALLOWED_GRADES.map((g) => (
@@ -290,13 +327,14 @@ export const SubjectMarksTable: React.FC<SubjectMarksTableProps> = ({
                   ) : (
                     <>
                       {/* Column 3: Descriptive */}
-                      <td className="py-2.5 px-3 border-r border-slate-200">
+                      <td className={`${isCompact ? 'py-1 px-2' : 'py-2 px-3'} border-r border-slate-200`}>
                         {cfg.descriptive > 0 ? (
                           <MarksComponentInput
                             value={vals.descriptive}
                             maxMarks={cfg.descriptive}
                             componentLabel="Descriptive"
                             disabled={disabled}
+                            density={density}
                             inputRef={(el) => {
                               inputRefs.current[`${sub.id}_descriptive`] = el;
                             }}
@@ -312,20 +350,21 @@ export const SubjectMarksTable: React.FC<SubjectMarksTableProps> = ({
                             }
                           />
                         ) : (
-                          <span className="text-slate-400 font-bold uppercase select-none">
+                          <span className="text-slate-400 font-bold uppercase select-none text-xs">
                             NA
                           </span>
                         )}
                       </td>
 
                       {/* Column 4: Practical */}
-                      <td className="py-2.5 px-3 border-r border-slate-200">
+                      <td className={`${isCompact ? 'py-1 px-2' : 'py-2 px-3'} border-r border-slate-200`}>
                         {cfg.practical > 0 ? (
                           <MarksComponentInput
                             value={vals.practical}
                             maxMarks={cfg.practical}
                             componentLabel="Practical"
                             disabled={disabled}
+                            density={density}
                             inputRef={(el) => {
                               inputRefs.current[`${sub.id}_practical`] = el;
                             }}
@@ -341,20 +380,21 @@ export const SubjectMarksTable: React.FC<SubjectMarksTableProps> = ({
                             }
                           />
                         ) : (
-                          <span className="text-slate-400 font-bold uppercase select-none">
+                          <span className="text-slate-400 font-bold uppercase select-none text-xs">
                             NA
                           </span>
                         )}
                       </td>
 
                       {/* Column 5: IA */}
-                      <td className="py-2.5 px-3">
+                      <td className={`${isCompact ? 'py-1 px-2' : 'py-2 px-3'}`}>
                         {cfg.ia > 0 ? (
                           <MarksComponentInput
                             value={vals.ia}
                             maxMarks={cfg.ia}
                             componentLabel="IA"
                             disabled={disabled}
+                            density={density}
                             inputRef={(el) => {
                               inputRefs.current[`${sub.id}_ia`] = el;
                             }}
@@ -364,7 +404,7 @@ export const SubjectMarksTable: React.FC<SubjectMarksTableProps> = ({
                             errorMessage={validationErrors[`${sub.id}_ia`]}
                           />
                         ) : (
-                          <span className="text-slate-400 font-bold uppercase select-none">
+                          <span className="text-slate-400 font-bold uppercase select-none text-xs">
                             NA
                           </span>
                         )}

@@ -233,6 +233,7 @@ export function DataTable<T extends { id?: string | number }>({
                 return (
                   <tr
                     key={(item as any).id || index}
+                    id={(item as any).id ? `row-${(item as any).id}` : undefined}
                     className={`hover:bg-slate-50/90 transition-colors ${customClass}`}
                   >
                     {columns.map((col) => {

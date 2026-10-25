@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   ShieldAlert,
   AlertTriangle,
@@ -53,6 +53,28 @@ export const ExamStudentListPage: React.FC<ExamStudentListPageProps> = ({
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [openKebabStudentId, setOpenKebabStudentId] = useState<string | null>(null);
   const [highlightedStudentIds, setHighlightedStudentIds] = useState<string[]>([]);
+
+  // Check for last edited student from marks entry form to restore scroll and highlight for 2s
+  useEffect(() => {
+    try {
+      const lastId = sessionStorage.getItem('last_edited_student_id');
+      if (lastId) {
+        setHighlightedStudentIds([lastId]);
+        setTimeout(() => {
+          const el = document.getElementById(`row-${lastId}`);
+          if (el) {
+            el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          }
+        }, 100);
+
+        const timer = setTimeout(() => {
+          setHighlightedStudentIds([]);
+          sessionStorage.removeItem('last_edited_student_id');
+        }, 2000);
+        return () => clearTimeout(timer);
+      }
+    } catch {}
+  }, []);
 
   // Target class & exam records
   const currentClass = classes.find((c) => c.id === classId) || {
