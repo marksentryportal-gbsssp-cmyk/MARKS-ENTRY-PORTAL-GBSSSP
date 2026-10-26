@@ -319,7 +319,7 @@ export const StudentMarksheetView: React.FC<StudentMarksheetViewProps> = ({
                 </div>
                 <div className="p-2 flex items-center justify-between">
                   <span className="font-semibold text-slate-600">Class & Section:</span>
-                  <span className="font-medium text-slate-800">Class {targetClass.name} (Sec {student.section})</span>
+                  <span className="font-medium text-slate-800">Class {targetClass.name} (Sec {student.section || 'A'})</span>
                 </div>
                 <div className="p-2 flex items-center justify-between bg-slate-50/50">
                   <span className="font-semibold text-slate-600">Roll Number:</span>
@@ -331,6 +331,14 @@ export const StudentMarksheetView: React.FC<StudentMarksheetViewProps> = ({
                 </div>
               </div>
             </div>
+
+            {/* Address Row if Enabled */}
+            {resultSettings.showAddress && student.currentAddress && (
+              <div className="border-t border-slate-700 p-2 flex items-center justify-between bg-slate-50 text-xs">
+                <span className="font-semibold text-slate-600">Residential Address:</span>
+                <span className="font-medium text-slate-900">{student.currentAddress}</span>
+              </div>
+            )}
           </div>
 
           {/* 3. Academic Evaluation / Marks Table */}

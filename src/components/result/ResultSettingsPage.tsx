@@ -60,6 +60,7 @@ export const ResultSettingsPage: React.FC = () => {
   const [showRank, setShowRank] = useState(resultSettings.showRank);
   const [showAttendance, setShowAttendance] = useState(resultSettings.showAttendance);
   const [showRemarks, setShowRemarks] = useState(resultSettings.showRemarks);
+  const [showAddress, setShowAddress] = useState(resultSettings.showAddress !== false);
   const [showWeightedBreakdown, setShowWeightedBreakdown] = useState(
     resultSettings.showWeightedBreakdown !== false
   );
@@ -214,6 +215,7 @@ export const ResultSettingsPage: React.FC = () => {
       showRank,
       showAttendance,
       showRemarks,
+      showAddress,
     });
   };
 
@@ -1182,6 +1184,19 @@ export const ResultSettingsPage: React.FC = () => {
                 <div>
                   <span className="text-xs font-bold text-slate-800 block">Show Remarks Box</span>
                   <span className="text-[10px] text-slate-500 block">Print qualitative teacher notes</span>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 bg-slate-50 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showAddress}
+                  onChange={(e) => setShowAddress(e.target.checked)}
+                  className="w-4 h-4 text-teal-600 rounded"
+                />
+                <div>
+                  <span className="text-xs font-bold text-slate-800 block">Show Student Address</span>
+                  <span className="text-[10px] text-slate-500 block">Print residential address on marksheet</span>
                 </div>
               </label>
             </div>

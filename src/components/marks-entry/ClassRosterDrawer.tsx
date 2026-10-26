@@ -103,7 +103,7 @@ export const ClassRosterDrawer: React.FC<ClassRosterDrawerProps> = ({
       (s) =>
         s.name.toLowerCase().includes(term) ||
         (s.fatherName && s.fatherName.toLowerCase().includes(term)) ||
-        s.registrationNo.toLowerCase().includes(term) ||
+        (s.registrationNo && s.registrationNo.toLowerCase().includes(term)) ||
         (s.rollNo && s.rollNo.includes(term))
     );
   }, [searchTerm, manualList, rawClassStudents, hasManualChanges]);
@@ -351,30 +351,42 @@ export const ClassRosterDrawer: React.FC<ClassRosterDrawerProps> = ({
 
                         {/* Roll Number Column */}
                         <td className="py-2.5 px-3">
-                          {isNumeric ? (
-                            <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                              {student.rollNo}
+                          <div className="flex items-center gap-1.5">
+                            {isNumeric ? (
+                              <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                {student.rollNo}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-amber-700 font-semibold bg-amber-50 px-1.5 py-0.5 rounded text-[11px]">
+                                <AlertTriangle className="w-3 h-3" />
+                                <span>No Roll</span>
+                              </span>
+                            )}
+                            <span className="font-mono text-[10px] text-teal-800 bg-teal-50 border border-teal-200 px-1.5 py-0.5 rounded font-semibold">
+                              {student.section || 'A'}
                             </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-amber-700 font-semibold bg-amber-50 px-1.5 py-0.5 rounded text-[11px]">
-                              <AlertTriangle className="w-3 h-3" />
-                              <span>Missing</span>
+                          </div>
+                        </td>
+
+                        {/* Registration Number */}
+                        <td className="py-2.5 px-3 font-mono text-slate-600 select-all text-xs">
+                          {student.registrationNo}
+                        </td>
+
+                        {/* Name & Address */}
+                        <td className="py-2.5 px-3">
+                          <span className="font-bold text-slate-900 uppercase block">
+                            {student.name}
+                          </span>
+                          {student.currentAddress && (
+                            <span className="text-[10px] text-slate-500 block truncate max-w-xs" title={student.currentAddress}>
+                              {student.currentAddress}
                             </span>
                           )}
                         </td>
 
-                        {/* Registration Number */}
-                        <td className="py-2.5 px-3 font-mono text-slate-600 select-all">
-                          {student.registrationNo}
-                        </td>
-
-                        {/* Name */}
-                        <td className="py-2.5 px-3 font-bold text-slate-900 uppercase">
-                          {student.name}
-                        </td>
-
                         {/* Father Name */}
-                        <td className="py-2.5 px-3 text-slate-600 uppercase">
+                        <td className="py-2.5 px-3 text-slate-600 uppercase text-xs">
                           {student.fatherName}
                         </td>
 

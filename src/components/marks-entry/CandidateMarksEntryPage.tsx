@@ -826,7 +826,7 @@ export const CandidateMarksEntryPage: React.FC<CandidateMarksEntryPageProps> = (
   const errorCount = Object.keys(validationErrors).length;
 
   return (
-    <div className={`space-y-3 ${density === 'compact' ? 'pb-24' : 'pb-28'}`}>
+    <div className="space-y-3">
       
       {/* Read-Only Banner if Final Submitted or Outside Dates */}
       {isReadOnly && (
@@ -985,142 +985,141 @@ export const CandidateMarksEntryPage: React.FC<CandidateMarksEntryPageProps> = (
           nextExamName={nextExam ? nextExam.name : null}
           disabled={isReadOnly}
         />
-      </div>
 
-      {/* 4. STICKY ACTION BAR AT BOTTOM OF SCREEN */}
-      <div className="fixed bottom-0 left-0 right-0 md:left-60 z-30 bg-white/95 backdrop-blur-md border-t border-slate-200/90 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] py-2.5 px-4 md:px-6">
-        
-        {/* Quiet thin green confirmation flash bar */}
-        {savedFlashNotice && (
-          <div className="absolute top-0 left-0 right-0 h-0.5 bg-emerald-500 animate-pulse" />
-        )}
+        {/* 4. INLINE ACTION PANEL (Directly below NextExamSelector) */}
+        <div className="bg-white rounded-lg border border-slate-200 shadow-xs p-3 md:p-3.5 relative overflow-hidden">
+          {/* Quiet thin green confirmation flash bar */}
+          {savedFlashNotice && (
+            <div className="absolute top-0 left-0 right-0 h-0.5 bg-emerald-500 animate-pulse" />
+          )}
 
-        <div className="flex flex-col lg:flex-row items-center justify-between gap-2.5">
-          {/* Left Zone: Live Totals & Error / Saved Feedback */}
-          <div className="flex items-center gap-3 flex-wrap font-medium text-xs">
-            <div className="flex items-center gap-2 bg-slate-50 px-2.5 py-1 rounded border border-slate-200">
-              <span className="text-slate-500">Obtained:</span>
-              <strong className="text-base font-black text-[#0f766e] font-mono">
-                {summaryInfo.totalObtained}
-              </strong>
-              <span className="text-slate-300">/</span>
-              <strong className="text-slate-800 font-mono">
-                {summaryInfo.totalFullMarks}
-              </strong>
-              <span className="text-purple-900 font-bold ml-1 font-mono">
-                ({summaryInfo.totalFullMarks > 0 ? ((summaryInfo.totalObtained / summaryInfo.totalFullMarks) * 100).toFixed(1) : 0}%)
+          <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+            {/* LEFT group: Live summary chips & error / saved notices */}
+            <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
+              <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded border border-slate-200 text-xs">
+                <span className="text-slate-500 font-medium">Obtained:</span>
+                <strong className="font-bold text-[#0f766e] font-mono">
+                  {summaryInfo.totalObtained}
+                </strong>
+                <span className="text-slate-300">/</span>
+                <strong className="text-slate-800 font-mono">
+                  {summaryInfo.totalFullMarks}
+                </strong>
+                <span className="text-purple-900 font-bold ml-0.5 font-mono">
+                  ({summaryInfo.totalFullMarks > 0 ? ((summaryInfo.totalObtained / summaryInfo.totalFullMarks) * 100).toFixed(1) : 0}%)
+                </span>
+              </div>
+
+              <span className="font-mono font-semibold text-slate-700 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded text-xs select-none">
+                {completedCount} of {examStudentList.length} completed
               </span>
+
+              {errorCount > 0 && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-red-50 text-red-700 border border-red-200 animate-in fade-in">
+                  <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
+                  <span>{errorCount} field{errorCount === 1 ? '' : 's'} need attention</span>
+                </span>
+              )}
+
+              {savedFlashNotice && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 animate-in fade-in">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>{savedFlashNotice}</span>
+                </span>
+              )}
             </div>
 
-            {/* Error count pill */}
-            {errorCount > 0 && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-red-50 text-red-700 border border-red-200 animate-in fade-in">
-                <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
-                <span>{errorCount} field{errorCount === 1 ? '' : 's'} need attention</span>
-              </span>
-            )}
+            {/* MIDDLE group: Skip completed checkbox & Density toggle */}
+            <div className="flex items-center gap-3 text-xs justify-start lg:justify-center border-t border-slate-100 pt-2 lg:border-t-0 lg:pt-0">
+              <label className="inline-flex items-center gap-1.5 cursor-pointer text-slate-700 select-none">
+                <input
+                  type="checkbox"
+                  checked={skipCompleted}
+                  onChange={(e) => setSkipCompleted(e.target.checked)}
+                  className="w-3.5 h-3.5 text-purple-600 rounded border-slate-300 focus:ring-purple-500 cursor-pointer"
+                />
+                <span className="text-[11px] font-medium text-slate-600 whitespace-nowrap">Skip completed</span>
+              </label>
 
-            {/* Quiet Saved notice */}
-            {savedFlashNotice && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 animate-in fade-in">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                <span>{savedFlashNotice}</span>
-              </span>
-            )}
-          </div>
+              <div className="h-3.5 w-px bg-slate-200" />
 
-          {/* Middle Zone: Progress counter & Density setting */}
-          <div className="flex items-center gap-3 text-xs text-slate-500">
-            <span className="font-mono font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
-              {completedCount} of {examStudentList.length} completed
-            </span>
-
-            {/* Skip Completed Checkbox */}
-            <label className="hidden sm:inline-flex items-center gap-1.5 cursor-pointer text-slate-700 select-none">
-              <input
-                type="checkbox"
-                checked={skipCompleted}
-                onChange={(e) => setSkipCompleted(e.target.checked)}
-                className="w-3.5 h-3.5 text-purple-600 rounded border-slate-300 focus:ring-purple-500 cursor-pointer"
-              />
-              <span className="text-[11px] font-medium">Skip completed</span>
-            </label>
-
-            {/* Density switch button */}
-            <button
-              type="button"
-              onClick={toggleDensity}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-slate-200 hover:bg-slate-100 text-[11px] font-medium text-slate-600 cursor-pointer transition-colors"
-              title="Toggle table spacing density"
-            >
-              <SlidersHorizontal className="w-3 h-3 text-slate-500" />
-              <span>{density === 'compact' ? 'Compact' : 'Comfortable'}</span>
-            </button>
-          </div>
-
-          {/* Right Zone: Action Buttons */}
-          <div className="flex items-center gap-2 w-full lg:w-auto justify-end">
-            {/* GO BACK button */}
-            <button
-              type="button"
-              onClick={() => {
-                try {
-                  sessionStorage.setItem('last_edited_student_id', activeStudentId);
-                } catch {}
-                navigateTo(`/marks-entry/${classId}/${examId}`, { preserveScroll: true });
-              }}
-              className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-md border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all shadow-2xs cursor-pointer"
-            >
-              <ArrowLeft className="w-3.5 h-3.5 text-slate-500" />
-              <span>GO BACK</span>
-            </button>
-
-            {/* Save as draft */}
-            {!isReadOnly && (
               <button
                 type="button"
-                onClick={handleSaveDraft}
-                className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-md border border-purple-300 bg-purple-50 hover:bg-purple-100 text-[#7e22ce] text-xs font-bold transition-all shadow-2xs cursor-pointer"
-                title="Save without marking as completed"
+                onClick={toggleDensity}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded border border-slate-200 hover:bg-slate-100 text-[11px] font-medium text-slate-600 cursor-pointer transition-colors whitespace-nowrap"
+                title="Toggle table spacing density"
               >
-                <FileEdit className="w-3.5 h-3.5 text-[#9333ea]" />
-                <span className="hidden sm:inline">Save as draft</span>
-                <span className="sm:hidden">Draft</span>
+                <SlidersHorizontal className="w-3 h-3 text-slate-500" />
+                <span>{density === 'compact' ? 'Compact' : 'Comfortable'}</span>
               </button>
-            )}
+            </div>
 
-            {/* Plain SUBMIT MARKS */}
-            {!isReadOnly && (
-              <button
-                type="button"
-                onClick={() => handleTriggerSubmit('submit_only')}
-                className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-md bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold transition-all shadow-2xs cursor-pointer"
-              >
-                <Save className="w-3.5 h-3.5" />
-                <span>{isAlreadyCompleted ? 'UPDATE' : 'SUBMIT'}</span>
-              </button>
-            )}
+            {/* RIGHT group: Action buttons in exact order: GO BACK, Save as draft, SUBMIT, SUBMIT & NEXT */}
+            {/* On mobile: row 1 has GO BACK, Save as draft, SUBMIT; row 2 has SUBMIT & NEXT full width */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 border-t border-slate-100 pt-2 lg:border-t-0 lg:pt-0">
+              <div className="grid grid-cols-3 sm:flex items-center gap-2">
+                {/* 1. GO BACK (outlined) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      sessionStorage.setItem('last_edited_student_id', activeStudentId);
+                    } catch {}
+                    navigateTo(`/marks-entry/${classId}/${examId}`, { preserveScroll: true });
+                  }}
+                  className="inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all shadow-2xs cursor-pointer"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <span>GO BACK</span>
+                </button>
 
-            {/* Primary Default Action: SUBMIT & NEXT STUDENT (Ctrl+Enter) */}
-            {!isReadOnly && (
-              <button
-                type="button"
-                disabled={isSubmitting}
-                onClick={() => handleTriggerSubmit('submit_and_next')}
-                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md bg-[#9333ea] hover:bg-[#7e22ce] text-white text-xs font-black tracking-wide transition-all shadow-sm hover:shadow cursor-pointer ring-2 ring-purple-300/50 disabled:opacity-50"
-                title="Submit and immediately open next student (Ctrl+Enter)"
-              >
-                {isSubmitting ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Send className="w-3.5 h-3.5" />
+                {/* 2. Save as draft (light purple outlined) */}
+                {!isReadOnly && (
+                  <button
+                    type="button"
+                    onClick={handleSaveDraft}
+                    className="inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-md border border-purple-300 bg-purple-50 hover:bg-purple-100 text-[#7e22ce] text-xs font-bold transition-all shadow-2xs cursor-pointer"
+                    title="Save without marking as completed"
+                  >
+                    <FileEdit className="w-3.5 h-3.5 text-[#9333ea] shrink-0" />
+                    <span>Save as draft</span>
+                  </button>
                 )}
-                <span>{isAlreadyCompleted ? 'UPDATE & NEXT' : 'SUBMIT & NEXT'}</span>
-                <span className="hidden xl:inline text-[9px] bg-purple-900/60 text-purple-200 px-1 py-0.2 rounded font-mono font-normal">
-                  Ctrl+Enter
-                </span>
-              </button>
-            )}
+
+                {/* 3. SUBMIT (teal filled) */}
+                {!isReadOnly && (
+                  <button
+                    type="button"
+                    onClick={() => handleTriggerSubmit('submit_only')}
+                    className="inline-flex items-center justify-center gap-1 px-3.5 py-1.5 rounded-md bg-[#0f766e] hover:bg-teal-800 text-white text-xs font-bold transition-all shadow-2xs cursor-pointer"
+                  >
+                    <Save className="w-3.5 h-3.5 shrink-0" />
+                    <span>{isAlreadyCompleted ? 'UPDATE' : 'SUBMIT'}</span>
+                  </button>
+                )}
+              </div>
+
+              {/* 4. SUBMIT & NEXT (purple filled, with Ctrl+Enter badge; full width on mobile) */}
+              {!isReadOnly && (
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => handleTriggerSubmit('submit_and_next')}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-md bg-[#9333ea] hover:bg-[#7e22ce] text-white text-xs font-black tracking-wide transition-all shadow-xs hover:shadow-sm cursor-pointer ring-2 ring-purple-300/50 disabled:opacity-50"
+                  title="Submit and immediately open next student (Ctrl+Enter)"
+                >
+                  {isSubmitting ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5 shrink-0" />
+                  )}
+                  <span>{isAlreadyCompleted ? 'UPDATE & NEXT' : 'SUBMIT & NEXT'}</span>
+                  <span className="text-[9px] bg-purple-900/60 text-purple-200 px-1 py-0.2 rounded font-mono font-normal">
+                    Ctrl+Enter
+                  </span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>

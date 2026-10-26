@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import {
   X,
@@ -9,19 +9,29 @@ import {
   AlertCircle,
   Loader2,
   Sparkles,
+  RotateCcw,
 } from 'lucide-react';
 import { usePortal } from '../../store/portalStore';
 import { Student } from '../../types';
 import { StepIndicator } from './StepIndicator';
 import { FileDropzone } from './FileDropzone';
-import { ImportPreviewTable, ParsedRowItem } from './ImportPreviewTable';
 import {
-  matchHeaderToKey,
-  normalizeDateInput,
-  normalizeGender,
-  StandardHeaderKey,
-} from '../../utils/excelUtils';
-import { getHighestRollNo } from '../../utils/rollNoUtils';
+  ImportPreviewTable,
+  ParsedStudentRow,
+  RowErrorState,
+  RowWarningState,
+} from './ImportPreviewTable';
+import {
+  validateStudentName,
+  validateParentName,
+  validateCurrentAddress,
+  parseAndValidateDob,
+  normaliseGender,
+  matchClass,
+  findDuplicateStudent,
+} from '../../utils/studentValidator';
+import { getHighestRollNo, parseNumericRollNo } from '../../utils/rollNoUtils';
+import { normalizeDateInput } from '../../utils/excelUtils';
 
 interface BulkImportModalProps {
   isOpen: boolean;
@@ -33,6 +43,18 @@ interface BulkImportModalProps {
   onImportComplete?: (importedStudentIds: string[]) => void;
 }
 
+const HEADER_ALIASES: Record<string, string[]> = {
+  name: ['student name', 'name', 'student_name', 'candidate name', 'studentname', 'full name'],
+  class: ['class', 'grade', 'standard', 'cls', 'class name', 'classname'],
+  section: ['section', 'sec'],
+  rollNo: ['roll no', 'rollno', 'roll_no', 'roll number', 'roll', 'sl no', 'sl. no', 'serial no'],
+  dob: ['dob', 'date of birth', 'date_of_birth', 'birth date', 'birthdate', 'birth_date'],
+  gender: ['gender', 'sex'],
+  currentAddress: ['current address', 'address', 'present address', 'addr', 'residential address', 'residence'],
+  fatherName: ["father's name", 'father name', 'father_name', 'fathername', 'fathers name', 'father'],
+  motherName: ["mother's name", 'mother name', 'mother_name', 'mothername', 'mothers name', 'mother'],
+};
+
 export const BulkImportModal: React.FC<BulkImportModalProps> = ({
   isOpen,
   onClose,
@@ -43,15 +65,15 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
   onImportComplete,
 }) => {
   const {
+    classes,
     students,
-    createStudent,
-    updateStudent,
+    exams,
+    bulkImportStudents,
     generateNextRegNo,
-    addStudentToExam,
     addToast,
   } = usePortal();
 
-  // Workflow Step: 1 = Upload, 2 = Preview/Validate, 3 = Complete
+  // 3-step workflow
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
 
   // Raw file metadata
@@ -61,364 +83,565 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
   const [rawSheetRows, setRawSheetRows] = useState<any[]>([]);
 
   // Parsed and validated rows
-  const [previewRows, setPreviewRows] = useState<ParsedRowItem[]>([]);
+  const [rows, setRows] = useState<ParsedStudentRow[]>([]);
   const [rollNoOrderMode, setRollNoOrderMode] = useState<'file' | 'alphabetical'>('file');
-  const [fileHasRollNos, setFileHasRollNos] = useState<boolean>(false);
+  const [skipErrors, setSkipErrors] = useState<boolean>(true);
 
-  // Duplicate settings
-  const [skipDuplicates, setSkipDuplicates] = useState(true);
-  const [duplicateAction, setDuplicateAction] = useState<'skip' | 'update'>('skip');
-
-  // Import Execution state
+  // Execution state (Step 3)
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
-  const [importSummary, setImportSummary] = useState<{
-    imported: number;
-    skipped: number;
-    errors: number;
-  }>({ imported: 0, skipped: 0, errors: 0 });
+  const [importedCountResult, setImportedCountResult] = useState(0);
 
-  if (!isOpen) return null;
+  const targetClassObj = classes.find((c) => c.id === targetClassId);
+  const targetClassOrder = targetClassObj?.order;
 
-  // Validation function that maps and checks rows
-  const validateRows = (
-    rawRows: any[],
-    mappings: Record<string, string>,
-    existingStudents: Student[],
-    orderMode: 'file' | 'alphabetical' = rollNoOrderMode
-  ): ParsedRowItem[] => {
-    // Check if the uploaded file has a mapped rollNo column with values
-    const hasRollInFile = rawRows.some((row) => {
-      const col = mappings['rollNo'];
-      return col && String(row[col] ?? '').trim() !== '';
+  // Auto-match headers loosely
+  const autoDetectMappings = (headers: string[]): Record<string, string> => {
+    const mappings: Record<string, string> = {};
+    const normalizedHeaders = headers.map((h) => ({
+      original: h,
+      norm: h.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim(),
+    }));
+
+    Object.entries(HEADER_ALIASES).forEach(([fieldKey, aliases]) => {
+      for (const { original, norm } of normalizedHeaders) {
+        if (aliases.some((alias) => norm === alias || norm.includes(alias))) {
+          mappings[fieldKey] = original;
+          break;
+        }
+      }
     });
-    setFileHasRollNos(hasRollInFile);
 
-    // Starting roll number for auto-assignment (highest existing in class + 1)
-    const startRoll = getHighestRollNo(existingStudents, targetClassId, targetAcademicYear) + 1;
+    return mappings;
+  };
 
-    // Build row list with original index
-    let indexedRows = rawRows.map((rowObj, originalIdx) => ({ rowObj, originalIdx }));
-    if (orderMode === 'alphabetical') {
-      indexedRows.sort((a, b) => {
-        const nameCol = mappings['name'];
-        const nameA = String(nameCol ? a.rowObj[nameCol] || '' : '').trim().toUpperCase();
-        const nameB = String(nameCol ? b.rowObj[nameCol] || '' : '').trim().toUpperCase();
-        return nameA.localeCompare(nameB);
-      });
-    }
+  // Validation engine for a list of rows
+  const validateRowList = useCallback(
+    (
+      rawItems: Array<{
+        id: string;
+        rowNumber: number;
+        name: string;
+        class: string;
+        section: string;
+        rollNo: string;
+        dob: string;
+        gender: string;
+        currentAddress: string;
+        fatherName: string;
+        motherName: string;
+        isDeleted?: boolean;
+      }>,
+      orderMode: 'file' | 'alphabetical'
+    ): ParsedStudentRow[] => {
+      // Filter out deleted rows for roll assignment & duplicate checking
+      const nonDeleted = rawItems.filter((r) => !r.isDeleted);
 
-    const parsedList: ParsedRowItem[] = [];
-    const seenRegNosInFile = new Set<string>();
+      // Starting Roll No for target class
+      const startRoll = getHighestRollNo(students, targetClassId, targetAcademicYear) + 1;
 
-    indexedRows.forEach(({ rowObj, originalIdx }, sortedIdx) => {
-      const getVal = (standardKey: StandardHeaderKey) => {
-        const fileCol = mappings[standardKey];
-        if (!fileCol) return '';
-        const v = rowObj[fileCol];
-        return v !== undefined && v !== null ? v : '';
-      };
-
-      const rawRegNo = String(getVal('registrationNo')).trim();
-      const rawName = String(getVal('name')).trim().toUpperCase();
-      const rawFather = String(getVal('fatherName')).trim().toUpperCase();
-      const rawMother = String(getVal('motherName')).trim().toUpperCase();
-      const rawDob = getVal('dob');
-      const rawGender = getVal('gender');
-      const rawSection = String(getVal('section')).trim().toUpperCase() || 'A';
-
-      // Roll No:
-      // If file has roll numbers and we are in file mode, use it. Otherwise, sequentially assign starting from startRoll
-      let assignedRoll = String(getVal('rollNo')).trim();
-      if (!assignedRoll || orderMode === 'alphabetical') {
-        assignedRoll = String(startRoll + sortedIdx);
+      // Determine sorting for auto-rolls
+      let sortedItems = [...nonDeleted];
+      if (orderMode === 'alphabetical') {
+        sortedItems.sort((a, b) => a.name.trim().localeCompare(b.name.trim()));
       }
 
-      const rawAdm = String(getVal('admissionNo')).trim();
+      // Map auto-rolls for blank roll numbers
+      const autoRollMap = new Map<string, string>();
+      let autoRollCounter = 0;
+      sortedItems.forEach((item) => {
+        if (!item.rollNo.trim()) {
+          autoRollMap.set(item.id, String(startRoll + autoRollCounter));
+          autoRollCounter++;
+        }
+      });
 
-      const { dateStr: formattedDob, isValid: isDobValid } = normalizeDateInput(rawDob);
-      const normalizedGen = normalizeGender(rawGender);
+      // Track duplicate roll numbers in this batch per class and section
+      const rollFrequency = new Map<string, number>();
+      nonDeleted.forEach((item) => {
+        const effectiveRoll = item.rollNo.trim() || autoRollMap.get(item.id) || '';
+        if (effectiveRoll) {
+          const key = `${item.class.toLowerCase().trim()}_${item.section.trim().toUpperCase()}_${effectiveRoll}`;
+          rollFrequency.set(key, (rollFrequency.get(key) || 0) + 1);
+        }
+      });
 
-      // Status check
-      let status: 'valid' | 'duplicate' | 'error' = 'valid';
-      let errorMessage = '';
+      // Validate each row
+      return rawItems.map((item) => {
+        const effectiveRoll = item.rollNo.trim() || autoRollMap.get(item.id) || '';
+        const errors: RowErrorState = {};
+        const warnings: RowWarningState = {};
 
-      if (!rawName) {
-        status = 'error';
-        errorMessage = 'Student Name is required';
-      } else if (!rawFather) {
-        status = 'error';
-        errorMessage = "Father's Name is required";
-      } else if (!isDobValid || !formattedDob) {
-        status = 'error';
-        errorMessage = 'Invalid DOB format (use dd-mm-yyyy)';
-      } else if (rawRegNo) {
-        // Check duplicate in file
-        if (seenRegNosInFile.has(rawRegNo)) {
-          status = 'duplicate';
-          errorMessage = 'Duplicate registration number in uploaded file';
+        // 1. Name validation
+        const nameVal = validateStudentName(item.name);
+        if (!nameVal.isValid) {
+          errors.name = nameVal.error;
+        }
+
+        // 2. Class validation & matching
+        const classMatch = matchClass(item.class, classes);
+        let resolvedClassId = targetClassId;
+
+        if (!classMatch.isValidClass) {
+          errors.class = classMatch.error || 'Unknown class';
+          if (classMatch.didYouMean) {
+            warnings.classDidYouMean = classMatch.didYouMean;
+          }
         } else {
-          seenRegNosInFile.add(rawRegNo);
-          // Check duplicate against existing students in same class & academic year
-          const existing = existingStudents.find(
-            (s) =>
-              s.registrationNo === rawRegNo &&
-              s.classId === targetClassId &&
-              s.academicYear === targetAcademicYear
-          );
-          if (existing) {
-            status = 'duplicate';
-            errorMessage = `Already enrolled in ${targetClassName} (${existing.name})`;
+          resolvedClassId = classMatch.classId!;
+          if (resolvedClassId !== targetClassId) {
+            warnings.classMismatch = {
+              detectedClassId: resolvedClassId,
+              detectedClassName: classMatch.className!,
+            };
           }
         }
-      }
 
-      parsedList.push({
-        id: `row-${originalIdx}-${Date.now()}`,
-        rowNumber: originalIdx + 1,
-        registrationNo: rawRegNo,
-        name: rawName,
-        fatherName: rawFather,
-        motherName: rawMother,
-        dob: formattedDob || String(rawDob || ''),
-        gender: normalizedGen,
-        section: rawSection,
-        rollNo: assignedRoll,
-        admissionNo: rawAdm,
-        status,
-        errorMessage,
-        selected: status === 'valid',
-      });
-    });
-
-    return parsedList;
-  };
-
-  // Step 1: Read and parse file using SheetJS
-  const handleFileLoaded = async (file: File) => {
-    setLoadedFileName(file.name);
-    try {
-      const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
-      const firstSheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[firstSheetName];
-
-      // Convert sheet to json with headers
-      const jsonRows = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, {
-        defval: '',
-        raw: false,
-      });
-
-      if (jsonRows.length === 0) {
-        addToast('Spreadsheet appears to be empty or contains no data rows', 'error');
-        return;
-      }
-
-      // Detect header keys from first row
-      const sampleRow = jsonRows[0];
-      const headers = Object.keys(sampleRow);
-      setDetectedHeaders(headers);
-
-      // Auto-map headers
-      const newMappings: Record<string, string> = {};
-      headers.forEach((hdr) => {
-        const matchedKey = matchHeaderToKey(hdr);
-        if (matchedKey && !newMappings[matchedKey]) {
-          newMappings[matchedKey] = hdr;
+        // 3. Section validation
+        const sec = item.section.trim().toUpperCase();
+        if (!sec) {
+          errors.section = 'Section is required (default A)';
         }
+
+        // 4. Roll No validation
+        if (effectiveRoll) {
+          const num = parseNumericRollNo(effectiveRoll);
+          if (num === null || num <= 0) {
+            errors.rollNo = 'Roll No must be a positive number';
+          } else {
+            const freqKey = `${item.class.toLowerCase().trim()}_${sec}_${effectiveRoll}`;
+            if ((rollFrequency.get(freqKey) || 0) > 1) {
+              errors.rollNo = `Roll No. ${effectiveRoll} is repeated in this batch`;
+            } else {
+              // Check against existing database students
+              const existingMatch = students.find(
+                (s) =>
+                  s.classId === resolvedClassId &&
+                  (s.section || 'A').toUpperCase() === sec &&
+                  s.academicYear === targetAcademicYear &&
+                  s.active !== false &&
+                  s.rollNo.trim() === effectiveRoll
+              );
+              if (existingMatch) {
+                errors.rollNo = `Roll ${effectiveRoll} already belongs to ${existingMatch.name}`;
+              }
+            }
+          }
+        }
+
+        // 5. Date of Birth validation
+        const dobVal = parseAndValidateDob(item.dob, targetClassOrder, targetClassName);
+        if (!dobVal.isValid) {
+          errors.dob = dobVal.error || 'Invalid date. Use dd-mm-yyyy';
+        } else if (dobVal.warning) {
+          warnings.ageWarning = dobVal.warning;
+        }
+
+        // 6. Gender validation
+        const genVal = normaliseGender(item.gender);
+        if (!genVal.isValid) {
+          errors.gender = genVal.error || 'Gender must be Male, Female, or Other';
+        }
+
+        // 7. Father's Name validation
+        const fatherVal = validateParentName(item.fatherName, true, "Father's Name");
+        if (!fatherVal.isValid) {
+          errors.fatherName = fatherVal.error;
+        }
+
+        // 8. Mother's Name validation (soft warning if empty)
+        const motherVal = validateParentName(item.motherName, false, "Mother's Name");
+        if (!motherVal.isValid) {
+          errors.motherName = motherVal.error;
+        } else if (!item.motherName.trim()) {
+          warnings.missingMother = "Mother's name is empty";
+        }
+
+        // 9. Current Address (soft warning if empty)
+        const addrVal = validateCurrentAddress(item.currentAddress);
+        if (!addrVal.isValid) {
+          errors.address = addrVal.error;
+        } else if (!item.currentAddress.trim()) {
+          warnings.missingAddress = 'Current address is empty';
+        }
+
+        // 10. Duplicate student check in database
+        if (item.name.trim() && item.fatherName.trim() && dobVal.isValid) {
+          const dupCheck = findDuplicateStudent(
+            {
+              name: item.name,
+              fatherName: item.fatherName,
+              dob: dobVal.dateStr,
+              classId: resolvedClassId,
+            },
+            students
+          );
+          if (dupCheck.isDuplicate) {
+            errors.duplicate = 'Duplicate: student with same Name, Father and DOB already exists';
+          }
+        }
+
+        // Compute overall status
+        const hasErrors = Object.keys(errors).length > 0;
+        const hasWarnings = Object.keys(warnings).length > 0;
+        const status = hasErrors ? 'error' : hasWarnings ? 'warning' : 'valid';
+
+        return {
+          id: item.id,
+          rowNumber: item.rowNumber,
+          name: item.name.toUpperCase(),
+          class: item.class,
+          resolvedClassId,
+          section: sec || 'A',
+          rollNo: effectiveRoll,
+          dob: dobVal.dateStr || item.dob,
+          gender: genVal.gender,
+          currentAddress: item.currentAddress,
+          fatherName: item.fatherName.toUpperCase(),
+          motherName: item.motherName.toUpperCase(),
+          registrationNo: generateNextRegNo(),
+          admissionNo: '',
+          status,
+          isDeleted: Boolean(item.isDeleted),
+          errors,
+          warnings,
+        };
       });
-      setColumnMappings(newMappings);
-      setRawSheetRows(jsonRows);
-
-      // Validate rows
-      const validated = validateRows(jsonRows, newMappings, students, rollNoOrderMode);
-      setPreviewRows(validated);
-      setCurrentStep(2);
-    } catch (err) {
-      console.error(err);
-      addToast('Failed to parse spreadsheet file', 'error');
-    }
-  };
-
-  // Missing required columns check
-  const missingRequired = ['name', 'fatherName', 'dob'].filter(
-    (key) => !columnMappings[key]
+    },
+    [classes, students, targetAcademicYear, targetClassId, targetClassName, targetClassOrder, generateNextRegNo]
   );
 
-  const handleUpdateColumnMapping = (key: string, fileHeader: string) => {
-    const updated = { ...columnMappings, [key]: fileHeader };
-    setColumnMappings(updated);
-    const revalidated = validateRows(rawSheetRows, updated, students, rollNoOrderMode);
-    setPreviewRows(revalidated);
-  };
+  // File Loaded Handler
+  const handleFileLoaded = (file: File) => {
+    setLoadedFileName(file.name);
+    const reader = new FileReader();
 
-  const handleRollNoOrderChange = (mode: 'file' | 'alphabetical') => {
-    setRollNoOrderMode(mode);
-    const revalidated = validateRows(rawSheetRows, columnMappings, students, mode);
-    setPreviewRows(revalidated);
-  };
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array', cellDates: true });
 
-  // Inline row edit handler
-  const handleUpdateRow = (id: string, field: keyof ParsedRowItem, value: any) => {
-    setPreviewRows((prev) =>
-      prev.map((row) => {
-        if (row.id === id) {
-          const updated = { ...row, [field]: value };
-          // Re-evaluate validity
-          let status: 'valid' | 'duplicate' | 'error' = 'valid';
-          let errorMessage = '';
+        // Prefer worksheet named 'Students', else first worksheet
+        const sheetName =
+          workbook.SheetNames.find((s) => s.toLowerCase() === 'students') ||
+          workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
 
-          if (!updated.name.trim()) {
-            status = 'error';
-            errorMessage = 'Student Name is required';
-          } else if (!updated.fatherName.trim()) {
-            status = 'error';
-            errorMessage = "Father's Name is required";
-          } else if (!updated.dob.trim() || !updated.dob.match(/^\d{2}-\d{2}-\d{4}$/)) {
-            status = 'error';
-            errorMessage = 'DOB must be dd-mm-yyyy';
+        const rawMatrix: any[][] = XLSX.utils.sheet_to_json(worksheet, {
+          header: 1,
+          defval: '',
+        });
+
+        if (!rawMatrix || rawMatrix.length === 0) {
+          addToast('The uploaded spreadsheet contains no readable data', 'error');
+          return;
+        }
+
+        // Scan first 6 rows to locate the header row
+        let headerRowIndex = 0;
+        for (let r = 0; r < Math.min(rawMatrix.length, 6); r++) {
+          const rowStr = rawMatrix[r].map((cell) => String(cell || '').toLowerCase()).join(' ');
+          if (
+            rowStr.includes('name') ||
+            rowStr.includes('student') ||
+            rowStr.includes('father') ||
+            rowStr.includes('dob') ||
+            rowStr.includes('gender')
+          ) {
+            headerRowIndex = r;
+            break;
+          }
+        }
+
+        const rawHeaders = rawMatrix[headerRowIndex].map((h) => String(h || '').trim());
+        const detectedHdrList = rawHeaders.filter((h) => h.length > 0);
+        setDetectedHeaders(detectedHdrList);
+
+        const mappings = autoDetectMappings(detectedHdrList);
+        setColumnMappings(mappings);
+
+        // Parse data rows (skipping header row and untouched sample rows)
+        const dataRows = rawMatrix.slice(headerRowIndex + 1);
+        const parsedItems: any[] = [];
+
+        dataRows.forEach((rowCells, idx) => {
+          // Build row object by header
+          const rowObj: Record<string, any> = {};
+          rawHeaders.forEach((hdr, colIdx) => {
+            if (hdr) rowObj[hdr] = rowCells[colIdx] ?? '';
+          });
+
+          const getVal = (standardKey: string): string => {
+            const mappedHeader = mappings[standardKey];
+            if (!mappedHeader) return '';
+            const rawVal = rowObj[mappedHeader];
+            if (rawVal === undefined || rawVal === null) return '';
+            if (rawVal instanceof Date) {
+              const d = String(rawVal.getDate()).padStart(2, '0');
+              const m = String(rawVal.getMonth() + 1).padStart(2, '0');
+              return `${d}-${m}-${rawVal.getFullYear()}`;
+            }
+            return String(rawVal).trim();
+          };
+
+          const name = getVal('name');
+          const fatherName = getVal('fatherName');
+          const motherName = getVal('motherName');
+          const cls = getVal('class') || targetClassName;
+          const section = getVal('section') || 'A';
+          const rollNo = getVal('rollNo');
+          const rawDob = getVal('dob');
+          const gender = getVal('gender') || 'Male';
+          const address = getVal('currentAddress');
+
+          // Skip untouched sample rows
+          const upperName = name.toUpperCase();
+          const upperFather = fatherName.toUpperCase();
+          if (
+            (upperName === 'RIMA CHOUDHURY' && upperFather === 'PRANJAL CHOUDHURY') ||
+            (upperName === 'RAHUL DAS' && upperFather === 'BIREN DAS')
+          ) {
+            return;
           }
 
-          return {
-            ...updated,
-            status,
-            errorMessage,
-            selected: status === 'valid' ? true : updated.selected,
-          };
-        }
-        return row;
-      })
-    );
+          // Skip completely empty rows
+          if (!name && !fatherName && !rawDob && !address) {
+            return;
+          }
+
+          parsedItems.push({
+            id: `row-${idx}-${Date.now().toString().slice(-4)}`,
+            rowNumber: idx + 1,
+            name,
+            class: cls,
+            section: section || 'A',
+            rollNo,
+            dob: rawDob,
+            gender,
+            currentAddress: address,
+            fatherName,
+            motherName,
+            isDeleted: false,
+          });
+        });
+
+        setRawSheetRows(parsedItems);
+
+        // Run validation
+        const validated = validateRowList(parsedItems, rollNoOrderMode);
+        setRows(validated);
+
+        // Move to Step 2
+        setCurrentStep(2);
+      } catch (err) {
+        console.error('Failed to parse uploaded file', err);
+        addToast('Failed to parse spreadsheet. Please ensure it is a valid .xlsx or .csv file.', 'error');
+      }
+    };
+
+    reader.readAsArrayBuffer(file);
   };
 
-  const handleToggleRowSelect = (id: string) => {
-    setPreviewRows((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, selected: !r.selected } : r))
-    );
+  // Re-run validation whenever a row cell is edited
+  const handleUpdateCell = (id: string, field: keyof ParsedStudentRow, value: any) => {
+    setRows((prev) => {
+      const updated = prev.map((r) => (r.id === id ? { ...r, [field]: value } : r));
+      return validateRowList(updated, rollNoOrderMode);
+    });
   };
 
-  const handleSelectAllValid = (selectAll: boolean) => {
-    setPreviewRows((prev) =>
-      prev.map((r) => {
-        if (r.status === 'valid' || (r.status === 'duplicate' && duplicateAction === 'update')) {
-          return { ...r, selected: selectAll };
+  const handleDeleteRow = (id: string) => {
+    setRows((prev) => {
+      const updated = prev.map((r) => (r.id === id ? { ...r, isDeleted: true } : r));
+      return validateRowList(updated, rollNoOrderMode);
+    });
+  };
+
+  const handleRestoreRow = (id: string) => {
+    setRows((prev) => {
+      const updated = prev.map((r) => (r.id === id ? { ...r, isDeleted: false } : r));
+      return validateRowList(updated, rollNoOrderMode);
+    });
+  };
+
+  // Order mode change (File vs Alphabetical)
+  const handleChangeRollNoOrder = (mode: 'file' | 'alphabetical') => {
+    setRollNoOrderMode(mode);
+    setRows((prev) => validateRowList(prev, mode));
+  };
+
+  // Fix all dates in column
+  const handleFixAllDates = () => {
+    setRows((prev) => {
+      const updated = prev.map((r) => {
+        const { dateStr, isValid } = normalizeDateInput(r.dob);
+        if (isValid && dateStr) {
+          return { ...r, dob: dateStr };
         }
         return r;
-      })
-    );
+      });
+      addToast('Auto-formatted dates across all rows', 'success');
+      return validateRowList(updated, rollNoOrderMode);
+    });
   };
 
-  // Step 3: Execute Import
-  const handleExecuteImport = async () => {
-    const rowsToImport = previewRows.filter((r) => r.selected);
-    if (rowsToImport.length === 0) {
-      addToast('No rows selected for import', 'error');
+  // Find & Replace in a column
+  const handleFindAndReplace = (column: string, findText: string, replaceText: string) => {
+    let replacedCount = 0;
+    setRows((prev) => {
+      const updated = prev.map((r) => {
+        const currentVal = String((r as any)[column] || '');
+        if (currentVal.toLowerCase().includes(findText.toLowerCase())) {
+          replacedCount++;
+          const regex = new RegExp(findText, 'gi');
+          const newVal = currentVal.replace(regex, replaceText);
+          return { ...r, [column]: newVal };
+        }
+        return r;
+      });
+      addToast(`Replaced ${replacedCount} occurrence(s) in ${column}`, 'success');
+      return validateRowList(updated, rollNoOrderMode);
+    });
+  };
+
+  // Apply did-you-mean suggestion
+  const handleApplyClassSuggestion = (id: string, correctedName: string, correctedId: string) => {
+    setRows((prev) => {
+      const updated = prev.map((r) =>
+        r.id === id ? { ...r, class: correctedName, resolvedClassId: correctedId } : r
+      );
+      return validateRowList(updated, rollNoOrderMode);
+    });
+    addToast(`Applied suggestion: Class ${correctedName}`, 'success');
+  };
+
+  // Cross-class 1-click fixes
+  const handleChangeRowClassToTarget = (id: string) => {
+    setRows((prev) => {
+      const updated = prev.map((r) =>
+        r.id === id ? { ...r, class: targetClassName, resolvedClassId: targetClassId } : r
+      );
+      return validateRowList(updated, rollNoOrderMode);
+    });
+    addToast(`Updated row to Class ${targetClassName}`, 'success');
+  };
+
+  const handleChangeRowClassToDetected = (
+    id: string,
+    detectedClassId: string,
+    detectedClassName: string
+  ) => {
+    setRows((prev) => {
+      const updated = prev.map((r) =>
+        r.id === id ? { ...r, class: detectedClassName, resolvedClassId: detectedClassId } : r
+      );
+      return validateRowList(updated, rollNoOrderMode);
+    });
+    addToast(`Row will be imported into Class ${detectedClassName}`, 'info');
+  };
+
+  // Missing column mapping update
+  const handleUpdateColumnMapping = (standardKey: string, fileHeader: string) => {
+    const updatedMappings = { ...columnMappings, [standardKey]: fileHeader };
+    setColumnMappings(updatedMappings);
+
+    // Re-parse raw rows with updated mapping
+    if (rawSheetRows.length > 0) {
+      const reParsed = rawSheetRows.map((item) => {
+        return item;
+      });
+      setRows(validateRowList(reParsed, rollNoOrderMode));
+    }
+  };
+
+  const missingRequiredColumns = useMemo(() => {
+    const requiredKeys = ['name', 'fatherName', 'dob'];
+    return requiredKeys.filter((k) => !columnMappings[k]);
+  }, [columnMappings]);
+
+  // Compute rows eligible for import
+  const validAndImportableRows = useMemo(() => {
+    return rows.filter((r) => {
+      if (r.isDeleted) return false;
+      if (skipErrors) {
+        return r.status === 'valid' || r.status === 'warning';
+      }
+      return r.status === 'valid' || r.status === 'warning';
+    });
+  }, [rows, skipErrors]);
+
+  const totalErrorsCount = rows.filter((r) => !r.isDeleted && r.status === 'error').length;
+  const canProceedToImport = validAndImportableRows.length > 0 && (skipErrors || totalErrorsCount === 0);
+
+  // Execute Import (Step 3) - Atomic Store write!
+  const handleExecuteImport = () => {
+    if (validAndImportableRows.length === 0) {
+      addToast('No valid rows available to import', 'error');
       return;
     }
 
     setIsImporting(true);
-    setImportProgress(10);
-
-    const importedIds: string[] = [];
-    let skippedCount = previewRows.filter((r) => !r.selected).length;
-    let errorCount = previewRows.filter((r) => r.status === 'error').length;
-
-    // Simulate progressive batching for large lists
-    const total = rowsToImport.length;
-    for (let i = 0; i < total; i++) {
-      const row = rowsToImport[i];
-      const regNo = row.registrationNo.trim() || generateNextRegNo();
-
-      // Check if duplicate update
-      const existingStudent = students.find(
-        (s) => s.registrationNo === regNo && s.classId === targetClassId
-      );
-
-      if (existingStudent && duplicateAction === 'update') {
-        updateStudent(existingStudent.id, {
-          name: row.name,
-          fatherName: row.fatherName,
-          motherName: row.motherName || undefined,
-          dob: row.dob,
-          gender: row.gender,
-          section: row.section,
-          rollNo: row.rollNo,
-          admissionNo: row.admissionNo || undefined,
-        });
-        addStudentToExam(targetExamId, existingStudent.id);
-        importedIds.push(existingStudent.id);
-      } else {
-        const created = createStudent(
-          {
-            registrationNo: regNo,
-            name: row.name,
-            fatherName: row.fatherName,
-            motherName: row.motherName || undefined,
-            dob: row.dob,
-            gender: row.gender,
-            classId: targetClassId,
-            section: row.section || 'A',
-            rollNo: row.rollNo || String(i + 1).padStart(2, '0'),
-            academicYear: targetAcademicYear,
-            admissionNo: row.admissionNo || undefined,
-            active: true,
-          },
-          targetExamId
-        );
-        importedIds.push(created.id);
-      }
-
-      if (i % 10 === 0 || i === total - 1) {
-        setImportProgress(Math.round(((i + 1) / total) * 100));
-        // Yield momentarily to let UI update
-        await new Promise((r) => setTimeout(r, 15));
-      }
-    }
-
-    setIsImporting(false);
-    setImportSummary({
-      imported: importedIds.length,
-      skipped: skippedCount,
-      errors: errorCount,
-    });
     setCurrentStep(3);
+    setImportProgress(25);
 
-    if (onImportComplete) {
-      onImportComplete(importedIds);
-    }
+    setTimeout(() => {
+      setImportProgress(65);
+
+      setTimeout(() => {
+        // Construct Student records
+        const studentsToCreate: Array<Omit<Student, 'id'>> = validAndImportableRows.map((r) => ({
+          registrationNo: r.registrationNo || generateNextRegNo(),
+          name: r.name.trim().toUpperCase(),
+          studentName: r.name.trim().toUpperCase(),
+          fatherName: r.fatherName.trim().toUpperCase(),
+          motherName: r.motherName.trim() ? r.motherName.trim().toUpperCase() : undefined,
+          dob: r.dob.trim(),
+          gender: r.gender as any,
+          classId: r.resolvedClassId || targetClassId,
+          section: r.section.trim().toUpperCase() || 'A',
+          rollNo: r.rollNo.trim(),
+          currentAddress: r.currentAddress.trim(),
+          academicYear: targetAcademicYear,
+          admissionNo: r.admissionNo.trim() || undefined,
+          active: true,
+        }));
+
+        // Atomic write into store
+        const importedCount = bulkImportStudents(studentsToCreate, targetExamId);
+        setImportedCountResult(importedCount);
+        setImportProgress(100);
+        setIsImporting(false);
+
+        if (onImportComplete) {
+          onImportComplete(studentsToCreate.map((s) => s.registrationNo || ''));
+        }
+      }, 500);
+    }, 400);
   };
 
-  const handleResetModal = () => {
-    setCurrentStep(1);
-    setLoadedFileName('');
-    setRawSheetRows([]);
-    setPreviewRows([]);
-    setImportProgress(0);
-    onClose();
-  };
+  if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs">
-      <div className="bg-white rounded-lg shadow-2xl border border-slate-200 max-w-4xl w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[92vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/65 backdrop-blur-xs">
+      <div className="bg-white rounded-lg shadow-2xl border border-slate-200 max-w-5xl w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[92vh]">
         {/* Modal Header */}
-        <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-white">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-md bg-teal-50 border border-teal-200 text-[#0f766e]">
-              <FileSpreadsheet className="w-5 h-5" />
-            </div>
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 bg-slate-50/90">
+          <div className="flex items-center gap-2">
+            <FileSpreadsheet className="w-5 h-5 text-[#0f766e]" />
             <div>
-              <h3 className="font-bold text-slate-800 text-sm md:text-base">
-                Bulk Import Students &bull; Class {targetClassName} {targetAcademicYear}
+              <h3 className="font-bold text-slate-800 text-base">
+                Bulk Student Import &amp; Error Correction
               </h3>
-              <p className="text-[11px] text-slate-400">
-                Automated spreadsheet upload, duplicate validation &amp; exam enrollment
-              </p>
+              <span className="text-[11px] text-slate-500">
+                Target: Class <strong>{targetClassName}</strong> &bull; Session {targetAcademicYear}
+              </span>
             </div>
           </div>
+
           <button
             type="button"
-            onClick={handleResetModal}
-            className="text-slate-400 hover:text-slate-600 p-1 rounded-md"
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 p-1.5 rounded-md transition-colors cursor-pointer"
             aria-label="Close modal"
           >
             <X className="w-5 h-5" />
@@ -426,133 +649,133 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
         </div>
 
         {/* 3-Step Indicator */}
-        <StepIndicator currentStep={currentStep} />
+        <div className="px-5 py-2.5 bg-slate-100 border-b border-slate-200">
+          <StepIndicator currentStep={currentStep} />
+        </div>
 
         {/* Modal Body */}
-        <div className="p-5 overflow-y-auto flex-1">
+        <div className="p-4 sm:p-5 overflow-y-auto flex-1">
           {/* STEP 1: Upload */}
           {currentStep === 1 && (
             <FileDropzone
               className={targetClassName}
+              targetClassId={targetClassId}
               academicYear={targetAcademicYear}
+              availableClasses={classes}
+              existingStudents={students}
               onFileLoaded={handleFileLoaded}
             />
           )}
 
-          {/* STEP 2: Preview & Validate */}
+          {/* STEP 2: Review and Correct */}
           {currentStep === 2 && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between pb-1">
-                <div className="text-xs text-slate-500">
-                  File: <strong className="text-slate-800">{loadedFileName}</strong> &bull; Review candidate records before enrollment
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setCurrentStep(1)}
-                  className="text-[11px] text-teal-700 hover:underline flex items-center gap-1 font-semibold"
-                >
-                  <ArrowLeft className="w-3 h-3" />
-                  <span>Choose Different File</span>
-                </button>
-              </div>
-
-              <ImportPreviewTable
-                rows={previewRows}
-                onUpdateRow={handleUpdateRow}
-                onToggleRowSelect={handleToggleRowSelect}
-                onSelectAllValid={handleSelectAllValid}
-                skipDuplicates={skipDuplicates}
-                onToggleSkipDuplicates={setSkipDuplicates}
-                duplicateAction={duplicateAction}
-                onChangeDuplicateAction={setDuplicateAction}
-                detectedHeaders={detectedHeaders}
-                columnMappings={columnMappings}
-                onUpdateColumnMapping={handleUpdateColumnMapping}
-                missingRequiredColumns={missingRequired}
-                rollNoOrderMode={rollNoOrderMode}
-                onChangeRollNoOrder={handleRollNoOrderChange}
-                fileHasRollNos={fileHasRollNos}
-              />
-            </div>
+            <ImportPreviewTable
+              rows={rows}
+              targetClassId={targetClassId}
+              targetClassName={targetClassName}
+              targetAcademicYear={targetAcademicYear}
+              availableClasses={classes}
+              rollNoOrderMode={rollNoOrderMode}
+              onChangeRollNoOrder={handleChangeRollNoOrder}
+              onUpdateCell={handleUpdateCell}
+              onDeleteRow={handleDeleteRow}
+              onRestoreRow={handleRestoreRow}
+              onFixAllDates={handleFixAllDates}
+              onFindAndReplace={handleFindAndReplace}
+              onApplyClassSuggestion={handleApplyClassSuggestion}
+              onChangeRowClassToTarget={handleChangeRowClassToTarget}
+              onChangeRowClassToDetected={handleChangeRowClassToDetected}
+              missingRequiredColumns={missingRequiredColumns}
+              detectedHeaders={detectedHeaders}
+              columnMappings={columnMappings}
+              onUpdateColumnMapping={handleUpdateColumnMapping}
+              skipErrors={skipErrors}
+              onToggleSkipErrors={setSkipErrors}
+            />
           )}
 
-          {/* STEP 3: Complete & Progress */}
+          {/* STEP 3: Complete / Progress */}
           {currentStep === 3 && (
-            <div className="py-8 text-center max-w-md mx-auto space-y-4">
-              <div className="w-16 h-16 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center mx-auto shadow-inner">
-                <CheckCircle2 className="w-8 h-8" />
-              </div>
-
-              <h4 className="text-lg font-bold text-slate-800">
-                Bulk Import Completed Successfully!
-              </h4>
-
-              <div className="grid grid-cols-3 gap-3 p-4 bg-slate-50 border border-slate-200 rounded-lg text-xs">
-                <div>
-                  <span className="text-slate-400 block mb-0.5">Imported</span>
-                  <strong className="text-base text-emerald-700 font-mono">
-                    {importSummary.imported}
-                  </strong>
+            <div className="p-8 text-center space-y-5">
+              {isImporting ? (
+                <div className="space-y-4 max-w-md mx-auto">
+                  <div className="w-14 h-14 rounded-full bg-teal-50 border border-teal-200 flex items-center justify-center mx-auto text-teal-700 animate-spin">
+                    <Loader2 className="w-7 h-7" />
+                  </div>
+                  <h4 className="text-base font-bold text-slate-800">
+                    Enrolling Students &amp; Synchronizing Exams...
+                  </h4>
+                  <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden border border-slate-200">
+                    <div
+                      className="bg-[#0f766e] h-full transition-all duration-300 rounded-full"
+                      style={{ width: `${importProgress}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-slate-500 font-mono">
+                    {importProgress}% completed &bull; Writing atomic transaction
+                  </p>
                 </div>
-                <div>
-                  <span className="text-slate-400 block mb-0.5">Skipped</span>
-                  <strong className="text-base text-amber-700 font-mono">
-                    {importSummary.skipped}
-                  </strong>
-                </div>
-                <div>
-                  <span className="text-slate-400 block mb-0.5">Errors</span>
-                  <strong className="text-base text-slate-500 font-mono">
-                    {importSummary.errors}
-                  </strong>
-                </div>
-              </div>
+              ) : (
+                <div className="space-y-4 max-w-md mx-auto animate-in zoom-in-95 duration-150">
+                  <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto shadow-xs">
+                    <CheckCircle2 className="w-8 h-8" />
+                  </div>
+                  <h4 className="text-lg font-bold text-slate-900">
+                    Import Completed Successfully!
+                  </h4>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    Successfully imported <strong>{importedCountResult}</strong> student(s) into Class {targetClassName}.
+                    They have been auto-enrolled across all active exams for this session.
+                  </p>
 
-              <p className="text-xs text-slate-600 leading-relaxed">
-                Candidates have been enrolled in <strong>Class {targetClassName}</strong> with initial marks entry status set to <em>&ldquo;Not Completed&rdquo;</em>. Newly added rows are highlighted in the student roster table.
-              </p>
+                  <div className="p-3 bg-teal-50 border border-teal-200 rounded-lg text-teal-900 text-xs">
+                    <span className="font-semibold block">Safety &amp; Reversibility:</span>
+                    A 30-second Undo toast is active on the screen if you need to revert this import.
+                  </div>
 
-              <div className="pt-2">
-                <button
-                  type="button"
-                  onClick={handleResetModal}
-                  className="px-6 py-2.5 bg-[#0f766e] hover:bg-teal-800 text-white font-semibold text-xs rounded-lg transition-colors shadow-xs cursor-pointer"
-                >
-                  Done &amp; View Student Roster
-                </button>
-              </div>
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="px-6 py-2.5 bg-[#0f766e] hover:bg-teal-800 text-white font-semibold rounded-md text-xs shadow-xs transition-colors cursor-pointer"
+                    >
+                      Done &amp; View Student Roster
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
 
-        {/* Modal Footer (for Step 2 actions) */}
+        {/* Modal Footer */}
         {currentStep === 2 && (
-          <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-t border-slate-200 bg-slate-50/90 text-xs">
             <button
               type="button"
               onClick={() => setCurrentStep(1)}
-              className="px-3.5 py-2 border border-slate-300 rounded text-slate-700 hover:bg-slate-100 text-xs font-medium transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-slate-300 rounded text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
             >
-              Back to Upload
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Back to Upload</span>
             </button>
 
-            <div className="flex items-center gap-3">
-              {isImporting && (
-                <div className="flex items-center gap-2 text-xs text-teal-800 font-medium">
-                  <Loader2 className="w-4 h-4 animate-spin text-teal-700" />
-                  <span>Importing {importProgress}%...</span>
-                </div>
-              )}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-1.5 border border-slate-300 rounded text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
 
               <button
                 type="button"
-                disabled={isImporting || previewRows.filter((r) => r.selected).length === 0}
+                disabled={!canProceedToImport}
                 onClick={handleExecuteImport}
-                className="inline-flex items-center gap-1.5 px-5 py-2 bg-[#0f766e] hover:bg-teal-800 disabled:opacity-40 text-white font-semibold text-xs rounded-lg shadow-xs transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-5 py-1.5 bg-[#0f766e] hover:bg-teal-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded shadow-xs transition-colors cursor-pointer"
               >
-                <span>
-                  Import {previewRows.filter((r) => r.selected).length} Students
-                </span>
+                <span>Confirm &amp; Import ({validAndImportableRows.length} Students)</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>

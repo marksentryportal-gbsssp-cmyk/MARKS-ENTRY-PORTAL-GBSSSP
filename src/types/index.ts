@@ -52,8 +52,8 @@ export type ExamStatus = 'FinalSubmitted' | 'Open' | 'Closed' | 'NotStarted';
 
 export interface Student {
   id: string;
-  registrationNo: string; // e.g. "06/RP/1003/637675/26"
-  name: string;           // Uppercase Assamese name
+  name: string;           // Uppercase name
+  studentName?: string;   // Synonym for name (User request 1)
   fatherName: string;
   motherName?: string;
   dob: string;            // dd-mm-yyyy
@@ -61,8 +61,10 @@ export interface Student {
   classId: string;
   section: string;        // e.g. "A"
   rollNo: string;         // e.g. "01"
+  currentAddress?: string; // Multi-line address (max 200 chars)
   academicYear: string;   // e.g. "2026-2027"
-  admissionNo?: string;
+  registrationNo?: string; // Optional
+  admissionNo?: string;    // Optional
   active: boolean;
 }
 
@@ -169,6 +171,7 @@ export interface ResultSettings {
   showRank: boolean;
   showAttendance: boolean;
   showRemarks: boolean;
+  showAddress?: boolean;
   principalName: string;
   classTeacherSignatureLabel: string;
   marksheetTitle: string;

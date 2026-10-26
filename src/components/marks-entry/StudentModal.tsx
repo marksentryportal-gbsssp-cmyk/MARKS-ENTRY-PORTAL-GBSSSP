@@ -5,11 +5,9 @@ import {
   Users,
   CheckSquare,
   Square,
-  Sparkles,
 } from 'lucide-react';
 import { usePortal } from '../../store/portalStore';
-import { htmlInputToDateStr } from '../../utils/dateUtils';
-import { getNextRollNo, parseNumericRollNo } from '../../utils/rollNoUtils';
+import { StudentAdmissionForm, StudentFormData } from './StudentAdmissionForm';
 
 interface StudentModalProps {
   isOpen: boolean;
@@ -29,6 +27,7 @@ export const StudentModal: React.FC<StudentModalProps> = ({
   const {
     classes,
     students,
+    exams,
     createStudent,
     importStudentsFromClass,
     generateNextRegNo,
@@ -38,94 +37,42 @@ export const StudentModal: React.FC<StudentModalProps> = ({
 
   const [activeTab, setActiveTab] = useState<'new' | 'import'>('new');
 
-  // Tab A: Add New Student State
-  const [name, setName] = useState('');
-  const [fatherName, setFatherName] = useState('');
-  const [motherName, setMotherName] = useState('');
-  const [registrationNo, setRegistrationNo] = useState(() => generateNextRegNo());
-  const [dobInput, setDobInput] = useState('2011-05-15'); // yyyy-mm-dd
-  const [gender, setGender] = useState<'Male' | 'Female' | 'Other'>('Male');
-  const [section, setSection] = useState('A');
-  const [rollNo, setRollNo] = useState('');
-  const [admissionNo, setAdmissionNo] = useState('');
-  const [rollError, setRollError] = useState<string | null>(null);
-
   // Tab B: Import From Previous Exam / Class
   const [sourceClassId, setSourceClassId] = useState(targetClassId);
   const [sourceYear, setSourceYear] = useState('2025-2026');
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
 
-  // Pre-fill next sequential roll number (highest + 1)
-  React.useEffect(() => {
-    if (isOpen) {
-      const nextNum = getNextRollNo(students, targetClassId, targetAcademicYear);
-      setRollNo(String(nextNum));
-      setRegistrationNo(generateNextRegNo());
-      setRollError(null);
-    }
-  }, [isOpen, targetClassId, targetAcademicYear, students]);
-
   if (!isOpen) return null;
 
-  // Tab A submit handler
-  const handleAddNewStudent = (e: React.FormEvent) => {
-    e.preventDefault();
-    setRollError(null);
+  // Filter exams of the current class for display
+  const classExams = exams.filter(
+    (e) => e.classId === targetClassId && e.academicYear === targetAcademicYear
+  );
 
-    if (!name.trim() || !fatherName.trim() || !dobInput) {
-      addToast('Please fill in required fields (Name, Father Name, DOB)', 'error');
-      return;
-    }
-
-    const numRoll = parseNumericRollNo(rollNo);
-    if (numRoll === null || numRoll <= 0) {
-      setRollError('Roll No. must be a valid positive number.');
-      addToast('Roll No. must be a valid positive number.', 'error');
-      return;
-    }
-
-    // Check duplicate roll number in this class and academic year
-    const duplicate = students.find(
-      (s) =>
-        s.classId === targetClassId &&
-        s.academicYear === targetAcademicYear &&
-        s.active !== false &&
-        s.rollNo.trim() === rollNo.trim()
-    );
-
-    if (duplicate) {
-      const msg = `Roll No. ${rollNo} is already assigned to ${duplicate.name} in this class.`;
-      setRollError(msg);
-      addToast(msg, 'error');
-      return;
-    }
-
+  const handleSaveStudent = (data: StudentFormData, addAnother = false) => {
     createStudent(
       {
-        registrationNo: registrationNo.trim() || generateNextRegNo(),
-        name: name.trim().toUpperCase(),
-        fatherName: fatherName.trim().toUpperCase(),
-        motherName: motherName.trim() ? motherName.trim().toUpperCase() : undefined,
-        dob: htmlInputToDateStr(dobInput),
-        gender,
-        classId: targetClassId,
-        section: section.trim() || 'A',
-        rollNo: rollNo.trim(),
+        registrationNo: data.registrationNo.trim() || generateNextRegNo(),
+        name: data.name.trim().toUpperCase(),
+        studentName: data.name.trim().toUpperCase(),
+        fatherName: data.fatherName.trim().toUpperCase(),
+        motherName: data.motherName.trim() ? data.motherName.trim().toUpperCase() : undefined,
+        dob: data.dob.trim(),
+        gender: data.gender,
+        classId: data.classId || targetClassId,
+        section: data.section.trim().toUpperCase() || 'A',
+        rollNo: data.rollNo.trim(),
+        currentAddress: data.currentAddress.trim(),
         academicYear: targetAcademicYear,
-        admissionNo: admissionNo.trim() || undefined,
+        admissionNo: data.admissionNo.trim() || undefined,
         active: true,
       },
       targetExamId
     );
 
-    // Reset and close
-    setName('');
-    setFatherName('');
-    setMotherName('');
-    setRollNo('');
-    setAdmissionNo('');
-    setRegistrationNo(generateNextRegNo());
-    onClose();
+    if (!addAnother) {
+      onClose();
+    }
   };
 
   // Tab B: Filter source students
@@ -164,33 +111,37 @@ export const StudentModal: React.FC<StudentModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-      <div className="bg-white rounded-lg shadow-2xl border border-slate-200 max-w-2xl w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
-        
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/65 backdrop-blur-xs">
+      <div className="bg-white rounded-lg shadow-2xl border border-slate-200 max-w-[760px] w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[92vh]">
         {/* Modal Header */}
-        <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-slate-50/80">
-          <div className="flex items-center gap-2">
-            <UserPlus className="w-5 h-5 text-[#0f766e]" />
-            <h3 className="font-bold text-slate-800 text-sm md:text-base">
-              Add Student to Examination
-            </h3>
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 bg-slate-50/90">
+          <div>
+            <div className="flex items-center gap-2">
+              <UserPlus className="w-5 h-5 text-[#0f766e]" />
+              <h3 className="font-bold text-slate-800 text-base">
+                Student Admission Details
+              </h3>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Fields marked <span className="text-red-500 font-semibold">*</span> are mandatory
+            </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 p-1 rounded-md"
+            className="text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 p-1.5 rounded-md transition-colors"
             aria-label="Close modal"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Modal Tabs: 2 clean tabs (Bulk Import is now beside Add Student button on main page) */}
-        <div className="flex border-b border-slate-200 bg-slate-100 text-xs font-semibold">
+        {/* Modal Tabs: 2 clean tabs */}
+        <div className="flex border-b border-slate-200 bg-slate-100 text-xs font-semibold shrink-0">
           <button
             type="button"
             onClick={() => setActiveTab('new')}
-            className={`flex-1 py-3 px-4 text-center border-b-2 transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
+            className={`flex-1 py-2.5 px-4 text-center border-b-2 transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
               activeTab === 'new'
                 ? 'border-[#0f766e] bg-white text-[#0f766e]'
                 : 'border-transparent text-slate-600 hover:text-slate-900'
@@ -203,7 +154,7 @@ export const StudentModal: React.FC<StudentModalProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('import')}
-            className={`flex-1 py-3 px-4 text-center border-b-2 transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
+            className={`flex-1 py-2.5 px-4 text-center border-b-2 transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
               activeTab === 'import'
                 ? 'border-[#0f766e] bg-white text-[#0f766e]'
                 : 'border-transparent text-slate-600 hover:text-slate-900'
@@ -215,188 +166,27 @@ export const StudentModal: React.FC<StudentModalProps> = ({
         </div>
 
         {/* Tab Contents (Scrollable) */}
-        <div className="p-5 overflow-y-auto flex-1 text-xs">
-          {/* TAB A: Add New Student Form */}
+        <div className="p-4 sm:p-5 overflow-y-auto flex-1 text-xs">
+          {/* TAB A: Official Student Admission Form */}
           {activeTab === 'new' && (
-            <form onSubmit={handleAddNewStudent} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                {/* Registration No */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="font-semibold text-slate-700">
-                      Registration No. (Optional):
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setRegistrationNo(generateNextRegNo())}
-                      className="text-[11px] text-teal-700 hover:underline flex items-center gap-1"
-                    >
-                      <Sparkles className="w-3 h-3" />
-                      <span>Generate Next</span>
-                    </button>
-                  </div>
-                  <input
-                    type="text"
-                    value={registrationNo}
-                    onChange={(e) => setRegistrationNo(e.target.value)}
-                    placeholder="e.g. 06/RP/1003/637675/26"
-                    className="w-full px-3 py-2 border border-slate-300 rounded font-mono text-xs focus:ring-2 focus:ring-teal-600 focus:outline-hidden"
-                  />
-                </div>
-
-                {/* Admission No */}
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">
-                    Admission No. (Optional):
-                  </label>
-                  <input
-                    type="text"
-                    value={admissionNo}
-                    onChange={(e) => setAdmissionNo(e.target.value)}
-                    placeholder="e.g. ADM-2026-0914"
-                    className="w-full px-3 py-2 border border-slate-300 rounded font-mono text-xs focus:ring-2 focus:ring-teal-600 focus:outline-hidden"
-                  />
-                </div>
-
-                {/* Student Name */}
-                <div className="sm:col-span-2">
-                  <label className="font-semibold text-slate-700 block mb-1">
-                    Student Full Name <span className="text-red-600">*</span>:
-                  </label>
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="ENTER FULL NAME IN BLOCK LETTERS"
-                    required
-                    className="w-full px-3 py-2 border border-slate-300 rounded uppercase font-medium text-xs focus:ring-2 focus:ring-teal-600 focus:outline-hidden"
-                  />
-                </div>
-
-                {/* Father's Name */}
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">
-                    Father&apos;s Name <span className="text-red-600">*</span>:
-                  </label>
-                  <input
-                    type="text"
-                    value={fatherName}
-                    onChange={(e) => setFatherName(e.target.value)}
-                    placeholder="ENTER FATHER'S FULL NAME"
-                    required
-                    className="w-full px-3 py-2 border border-slate-300 rounded uppercase font-medium text-xs focus:ring-2 focus:ring-teal-600 focus:outline-hidden"
-                  />
-                </div>
-
-                {/* Mother's Name */}
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">
-                    Mother&apos;s Name:
-                  </label>
-                  <input
-                    type="text"
-                    value={motherName}
-                    onChange={(e) => setMotherName(e.target.value)}
-                    placeholder="ENTER MOTHER'S FULL NAME"
-                    className="w-full px-3 py-2 border border-slate-300 rounded uppercase font-medium text-xs focus:ring-2 focus:ring-teal-600 focus:outline-hidden"
-                  />
-                </div>
-
-                {/* DOB */}
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">
-                    Date of Birth (DOB) <span className="text-red-600">*</span>:
-                  </label>
-                  <input
-                    type="date"
-                    value={dobInput}
-                    onChange={(e) => setDobInput(e.target.value)}
-                    required
-                    className="w-full px-3 py-2 border border-slate-300 rounded text-xs focus:ring-2 focus:ring-teal-600 focus:outline-hidden font-mono"
-                  />
-                  <span className="text-[10px] text-slate-400 mt-0.5 block">
-                    Format: {htmlInputToDateStr(dobInput)}
-                  </span>
-                </div>
-
-                {/* Gender */}
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">
-                    Gender:
-                  </label>
-                  <select
-                    value={gender}
-                    onChange={(e) => setGender(e.target.value as any)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded text-xs bg-white focus:ring-2 focus:ring-teal-600 focus:outline-hidden"
-                  >
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-
-                {/* Section */}
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">
-                    Section:
-                  </label>
-                  <input
-                    type="text"
-                    value={section}
-                    onChange={(e) => setSection(e.target.value.toUpperCase())}
-                    placeholder="A"
-                    maxLength={2}
-                    className="w-full px-3 py-2 border border-slate-300 rounded text-xs uppercase font-mono focus:ring-2 focus:ring-teal-600 focus:outline-hidden"
-                  />
-                </div>
-
-                {/* Roll No */}
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">
-                    Roll No. <span className="text-red-600">*</span>:
-                  </label>
-                  <input
-                    type="text"
-                    value={rollNo}
-                    onChange={(e) => {
-                      setRollNo(e.target.value);
-                      if (rollError) setRollError(null);
-                    }}
-                    placeholder="e.g. 13"
-                    className={`w-full px-3 py-2 border rounded text-xs font-mono focus:ring-2 focus:ring-teal-600 focus:outline-hidden ${
-                      rollError ? 'border-red-500 bg-red-50 text-red-900' : 'border-slate-300'
-                    }`}
-                  />
-                  {rollError && (
-                    <p className="text-[11px] text-red-600 mt-1 font-medium">{rollError}</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-4 py-2 border border-slate-300 rounded text-slate-700 hover:bg-slate-100 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-[#0f766e] hover:bg-teal-800 text-white font-medium rounded transition-colors shadow-2xs"
-                >
-                  Save &amp; Enroll Student
-                </button>
-              </div>
-            </form>
+            <StudentAdmissionForm
+              targetClassId={targetClassId}
+              targetAcademicYear={targetAcademicYear}
+              classes={classes}
+              students={students}
+              classExams={classExams}
+              isEditMode={false}
+              onSave={handleSaveStudent}
+              onCancel={onClose}
+              generateNextRegNo={generateNextRegNo}
+            />
           )}
 
           {/* TAB B: Import From Previous Exam / Class */}
           {activeTab === 'import' && (
             <div className="space-y-4">
-              <p className="text-slate-500 leading-relaxed">
-                Use this to quickly transfer, re-admit, or promote candidates from an earlier academic session or previous class into this exam.
+              <p className="text-slate-600 text-xs">
+                Quickly import existing candidates from previous academic years or another class roster.
               </p>
 
               {/* Source Selectors */}
@@ -411,7 +201,7 @@ export const StudentModal: React.FC<StudentModalProps> = ({
                       setSourceClassId(e.target.value);
                       setSelectedStudentIds([]);
                     }}
-                    className="w-full px-2.5 py-1.5 border border-slate-300 rounded bg-white text-xs"
+                    className="w-full px-2.5 py-1.5 border border-slate-300 rounded bg-white text-xs text-slate-800"
                   >
                     {classes.map((c) => (
                       <option key={c.id} value={c.id}>
@@ -431,7 +221,7 @@ export const StudentModal: React.FC<StudentModalProps> = ({
                       setSourceYear(e.target.value);
                       setSelectedStudentIds([]);
                     }}
-                    className="w-full px-2.5 py-1.5 border border-slate-300 rounded bg-white text-xs font-mono"
+                    className="w-full px-2.5 py-1.5 border border-slate-300 rounded bg-white text-xs font-mono text-slate-800"
                   >
                     <option value="2026-2027">2026-2027</option>
                     <option value="2025-2026">2025-2026</option>
@@ -450,7 +240,7 @@ export const StudentModal: React.FC<StudentModalProps> = ({
                     <button
                       type="button"
                       onClick={handleToggleSelectAllImport}
-                      className="text-teal-700 hover:text-teal-900 font-semibold text-[11px] flex items-center gap-1"
+                      className="text-teal-700 hover:text-teal-900 font-semibold text-[11px] flex items-center gap-1 cursor-pointer"
                     >
                       {selectedStudentIds.length === availableSourceStudents.length ? (
                         <>
@@ -514,7 +304,7 @@ export const StudentModal: React.FC<StudentModalProps> = ({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-4 py-2 border border-slate-300 rounded text-slate-700 hover:bg-slate-100 transition-colors"
+                  className="px-4 py-2 border border-slate-300 rounded text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -522,7 +312,7 @@ export const StudentModal: React.FC<StudentModalProps> = ({
                   type="button"
                   disabled={selectedStudentIds.length === 0}
                   onClick={handleImportSelected}
-                  className="px-4 py-2 bg-[#0f766e] hover:bg-teal-800 disabled:opacity-40 text-white font-medium rounded transition-colors shadow-2xs"
+                  className="px-4 py-2 bg-[#0f766e] hover:bg-teal-800 disabled:opacity-40 text-white font-medium rounded transition-colors shadow-2xs cursor-pointer"
                 >
                   Add Selected ({selectedStudentIds.length})
                 </button>
@@ -530,7 +320,6 @@ export const StudentModal: React.FC<StudentModalProps> = ({
             </div>
           )}
         </div>
-
       </div>
     </div>
   );

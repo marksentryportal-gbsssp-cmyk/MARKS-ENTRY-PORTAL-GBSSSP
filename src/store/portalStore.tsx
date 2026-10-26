@@ -578,16 +578,20 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const undoBulkImport = (importedStudentIds: string[], targetExamId: string) => {
     setStudents((prev) => prev.filter((s) => !importedStudentIds.includes(s.id)));
     setExamStudents((prev) => {
-      const list = prev[targetExamId] || [];
-      return {
-        ...prev,
-        [targetExamId]: list.filter((id) => !importedStudentIds.includes(id)),
-      };
+      const updated = { ...prev };
+      Object.keys(updated).forEach((examId) => {
+        updated[examId] = updated[examId].filter((id) => !importedStudentIds.includes(id));
+      });
+      return updated;
     });
     setMarksStatus((prev) => {
       const updated = { ...prev };
-      importedStudentIds.forEach((id) => {
-        delete updated[`${targetExamId}_${id}`];
+      Object.keys(updated).forEach((key) => {
+        const parts = key.split('_');
+        const sId = parts[1];
+        if (importedStudentIds.includes(sId)) {
+          delete updated[key];
+        }
       });
       return updated;
     });
@@ -702,8 +706,19 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         if (parsed.examTypes && Array.isArray(parsed.examTypes)) setExamTypes(parsed.examTypes);
         if (parsed.exams && Array.isArray(parsed.exams)) setExams(parsed.exams);
         if (parsed.students && Array.isArray(parsed.students)) {
-          // Ensure students have valid roll numbers
-          setStudents(parsed.students);
+          // Ensure students have valid roll numbers, section, address and sync studentName
+          const migratedStudents: Student[] = parsed.students.map((s: any) => {
+            const studentName = (s.studentName || s.name || '').trim().toUpperCase();
+            return {
+              ...s,
+              name: studentName,
+              studentName: studentName,
+              section: s.section ? s.section.trim().toUpperCase() : 'A',
+              currentAddress: s.currentAddress || '',
+              registrationNo: s.registrationNo || '',
+            };
+          });
+          setStudents(migratedStudents);
         }
         if (parsed.examStudents) setExamStudents(parsed.examStudents);
         if (parsed.marksStatus) setMarksStatus(parsed.marksStatus);
@@ -1077,36 +1092,54 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     targetExamId?: string
   ): Student => {
     const id = `stu-${studentData.classId}-${Date.now().toString().slice(-6)}`;
+    const studentName = (studentData.studentName || studentData.name).trim().toUpperCase();
     const newStudent: Student = {
       ...studentData,
       id,
-      name: studentData.name.trim().toUpperCase(),
+      name: studentName,
+      studentName: studentName,
       fatherName: studentData.fatherName.trim().toUpperCase(),
       motherName: studentData.motherName ? studentData.motherName.trim().toUpperCase() : undefined,
-      registrationNo: studentData.registrationNo.trim() || generateNextRegNo(),
+      currentAddress: studentData.currentAddress ? studentData.currentAddress.trim() : '',
+      section: studentData.section ? studentData.section.trim().toUpperCase() : 'A',
+      registrationNo: (studentData.registrationNo || '').trim() || generateNextRegNo(),
       active: true,
     };
 
     setStudents((prev) => [...prev, newStudent]);
 
-    // If added in context of an exam, enroll in exam list
-    if (targetExamId) {
+    // Auto-enroll in all exams of this class and academic year
+    const matchingExams = exams.filter(
+      (e) => e.classId === newStudent.classId && e.academicYear === newStudent.academicYear
+    );
+    const allExamIds = new Set<string>(matchingExams.map((e) => e.id));
+    if (targetExamId) allExamIds.add(targetExamId);
+
+    if (allExamIds.size > 0) {
       setExamStudents((prev) => {
-        const currentList = prev[targetExamId] || [];
-        if (!currentList.includes(newStudent.id)) {
-          return { ...prev, [targetExamId]: [...currentList, newStudent.id] };
-        }
-        return prev;
+        const updated = { ...prev };
+        allExamIds.forEach((examId) => {
+          const currentList = updated[examId] || [];
+          if (!currentList.includes(newStudent.id)) {
+            updated[examId] = [...currentList, newStudent.id];
+          }
+        });
+        return updated;
       });
 
-      // Default marks status to not_completed
-      setMarksStatus((prev) => ({
-        ...prev,
-        [`${targetExamId}_${newStudent.id}`]: 'not_completed',
-      }));
+      setMarksStatus((prev) => {
+        const updated = { ...prev };
+        allExamIds.forEach((examId) => {
+          const key = `${examId}_${newStudent.id}`;
+          if (!updated[key]) {
+            updated[key] = 'not_completed';
+          }
+        });
+        return updated;
+      });
     }
 
-    addToast(`Student ${newStudent.name} added successfully!`, 'success');
+    addToast(`Student ${newStudent.name} added and enrolled in exams!`, 'success');
     return newStudent;
   };
 
@@ -1114,12 +1147,16 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setStudents((prev) =>
       prev.map((s) => {
         if (s.id === studentId) {
+          const resolvedName = (updates.studentName || updates.name || s.name).trim().toUpperCase();
           return {
             ...s,
             ...updates,
-            name: updates.name ? updates.name.trim().toUpperCase() : s.name,
-            fatherName: updates.fatherName ? updates.fatherName.trim().toUpperCase() : s.fatherName,
-            motherName: updates.motherName ? updates.motherName.trim().toUpperCase() : s.motherName,
+            name: resolvedName,
+            studentName: resolvedName,
+            fatherName: updates.fatherName !== undefined ? updates.fatherName.trim().toUpperCase() : s.fatherName,
+            motherName: updates.motherName !== undefined ? (updates.motherName ? updates.motherName.trim().toUpperCase() : undefined) : s.motherName,
+            currentAddress: updates.currentAddress !== undefined ? updates.currentAddress.trim() : (s.currentAddress || ''),
+            section: updates.section ? updates.section.trim().toUpperCase() : (s.section || 'A'),
           };
         }
         return s;
@@ -1263,13 +1300,17 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     studentsList.forEach((item, index) => {
       const id = `stu-${item.classId}-${Date.now().toString().slice(-6)}-${index}`;
+      const studentName = (item.studentName || item.name).trim().toUpperCase();
       const student: Student = {
         ...item,
         id,
-        name: item.name.trim().toUpperCase(),
+        name: studentName,
+        studentName: studentName,
         fatherName: item.fatherName.trim().toUpperCase(),
         motherName: item.motherName ? item.motherName.trim().toUpperCase() : undefined,
-        registrationNo: item.registrationNo.trim() || generateNextRegNo(),
+        currentAddress: item.currentAddress ? item.currentAddress.trim() : '',
+        section: item.section ? item.section.trim().toUpperCase() : 'A',
+        registrationNo: (item.registrationNo || '').trim() || generateNextRegNo(),
         active: true,
       };
       newRecords.push(student);
@@ -1278,22 +1319,52 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     setStudents((prev) => [...prev, ...newRecords]);
 
-    if (targetExamId && newIds.length > 0) {
-      setExamStudents((prev) => {
-        const existing = prev[targetExamId] || [];
-        return { ...prev, [targetExamId]: [...existing, ...newIds] };
-      });
+    // Auto-enroll all imported students in all exams of their respective class & year
+    setExamStudents((prev) => {
+      const updated = { ...prev };
+      newRecords.forEach((stu) => {
+        const matchingExams = exams.filter(
+          (e) => e.classId === stu.classId && e.academicYear === stu.academicYear
+        );
+        const examIds = new Set<string>(matchingExams.map((e) => e.id));
+        if (targetExamId) examIds.add(targetExamId);
 
-      setMarksStatus((prev) => {
-        const updated = { ...prev };
-        newIds.forEach((id) => {
-          updated[`${targetExamId}_${id}`] = 'not_completed';
+        examIds.forEach((eId) => {
+          const currentList = updated[eId] || [];
+          if (!currentList.includes(stu.id)) {
+            updated[eId] = [...currentList, stu.id];
+          }
         });
-        return updated;
       });
-    }
+      return updated;
+    });
 
-    addToast(`Successfully bulk imported ${newRecords.length} students!`, 'success');
+    setMarksStatus((prev) => {
+      const updated = { ...prev };
+      newRecords.forEach((stu) => {
+        const matchingExams = exams.filter(
+          (e) => e.classId === stu.classId && e.academicYear === stu.academicYear
+        );
+        const examIds = new Set<string>(matchingExams.map((e) => e.id));
+        if (targetExamId) examIds.add(targetExamId);
+
+        examIds.forEach((eId) => {
+          const key = `${eId}_${stu.id}`;
+          if (!updated[key]) {
+            updated[key] = 'not_completed';
+          }
+        });
+      });
+      return updated;
+    });
+
+    addToast(
+      `Successfully bulk imported ${newRecords.length} students!`,
+      'success',
+      'Undo',
+      () => undoBulkImport(newIds, targetExamId || ''),
+      30000 // 30s undo window
+    );
     return newRecords.length;
   };
 

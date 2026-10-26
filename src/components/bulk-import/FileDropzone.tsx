@@ -1,22 +1,30 @@
 import React, { useState, useRef } from 'react';
-import { UploadCloud, FileSpreadsheet, Download, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { downloadSampleExcelTemplate } from '../../utils/excelUtils';
+import { UploadCloud, FileSpreadsheet, Download, AlertCircle, Users } from 'lucide-react';
+import { ClassInfo, Student } from '../../types';
+import { downloadExcelTemplate } from '../../utils/excelTemplateGenerator';
 
 interface FileDropzoneProps {
   className: string;
+  targetClassId: string;
   academicYear: string;
+  availableClasses: ClassInfo[];
+  existingStudents: Student[];
   onFileLoaded: (file: File) => void;
   isLoading?: boolean;
 }
 
 export const FileDropzone: React.FC<FileDropzoneProps> = ({
   className,
+  targetClassId,
   academicYear,
+  availableClasses,
+  existingStudents,
   onFileLoaded,
   isLoading = false,
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const validateAndPassFile = (file: File) => {
@@ -63,27 +71,75 @@ export const FileDropzone: React.FC<FileDropzoneProps> = ({
     }
   };
 
+  const handleDownloadBlankTemplate = async () => {
+    try {
+      setIsDownloading(true);
+      await downloadExcelTemplate({
+        className,
+        academicYear,
+        availableClasses,
+      });
+    } catch (e) {
+      console.error('Failed to download template', e);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handleDownloadPrefilledTemplate = async () => {
+    try {
+      setIsDownloading(true);
+      const classStudents = existingStudents.filter(
+        (s) => s.classId === targetClassId && s.academicYear === academicYear && s.active !== false
+      );
+      await downloadExcelTemplate({
+        className,
+        academicYear,
+        availableClasses,
+        existingStudents: classStudents,
+      });
+    } catch (e) {
+      console.error('Failed to download pre-filled template', e);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
-      {/* Top Banner with Sample Excel Download */}
-      <div className="p-3.5 bg-teal-50/70 border border-teal-200 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+      {/* Top Banner with Two Template Download Buttons */}
+      <div className="p-3.5 bg-teal-50/70 border border-teal-200 rounded-lg flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
         <div className="space-y-0.5">
           <span className="font-bold text-teal-900 block text-xs">
             Download Official Spreadsheet Template (.xlsx)
           </span>
           <p className="text-teal-800 text-[11px]">
-            Pre-formatted with the exact 9 columns required by the ASSEB-DI portal.
+            Created with ExcelJS: native drop-downs for Class, Section, and Gender, frozen teal header, and text-formatted DOB column.
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => downloadSampleExcelTemplate(className, academicYear)}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-teal-400 text-teal-800 hover:bg-teal-50 hover:border-teal-600 rounded-md text-xs font-semibold whitespace-nowrap shadow-2xs transition-colors cursor-pointer"
-        >
-          <Download className="w-3.5 h-3.5 text-teal-700" />
-          <span>Download Sample Excel Template</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={handleDownloadBlankTemplate}
+            disabled={isDownloading}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-teal-400 text-teal-800 hover:bg-teal-50 hover:border-teal-600 rounded-md text-xs font-semibold whitespace-nowrap shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+          >
+            <Download className="w-3.5 h-3.5 text-teal-700" />
+            <span>Download Excel Template</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleDownloadPrefilledTemplate}
+            disabled={isDownloading}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-700 hover:bg-teal-800 text-white rounded-md text-xs font-semibold whitespace-nowrap shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+            title="Export existing student roster to update and re-import"
+          >
+            <Users className="w-3.5 h-3.5 text-teal-100" />
+            <span>Download Template with Current Students</span>
+          </button>
+        </div>
       </div>
 
       {/* Drag & Drop Area */}
@@ -106,19 +162,20 @@ export const FileDropzone: React.FC<FileDropzoneProps> = ({
           Drag &amp; drop your Excel or CSV file here
         </h4>
         <p className="text-xs text-slate-500 mb-3">
-          or click anywhere in this area to select from your computer
+          or click anywhere in this area to select from your computer (.xlsx, .xls, .csv up to 5 MB)
         </p>
 
         <button
           type="button"
+          disabled={isLoading}
           className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#0f766e] hover:bg-teal-800 text-white rounded-md text-xs font-semibold shadow-xs transition-colors cursor-pointer pointer-events-none"
         >
           <FileSpreadsheet className="w-3.5 h-3.5" />
-          <span>Choose File (.xlsx, .xls, .csv)</span>
+          <span>{isLoading ? 'Reading File...' : 'Choose File'}</span>
         </button>
 
         <span className="text-[11px] text-slate-400 block mt-2">
-          Maximum file size: 5 MB (up to 1,000 student records)
+          Column headers detected automatically &bull; Sample rows ignored &bull; Safe error-correction step
         </span>
 
         <input
@@ -142,20 +199,23 @@ export const FileDropzone: React.FC<FileDropzoneProps> = ({
       <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 space-y-1.5">
         <span className="font-bold text-slate-800 flex items-center gap-1.5">
           <AlertCircle className="w-3.5 h-3.5 text-teal-700" />
-          <span>Important Formatting Rules:</span>
+          <span>Bulk Import Rules &amp; Safe Review:</span>
         </span>
         <ul className="list-disc list-inside space-y-1 text-[11px] text-slate-600 pl-1 leading-relaxed">
           <li>
-            <strong>Required Fields:</strong> Student Name, Father&apos;s Name, and Date of Birth (DOB) are mandatory.
+            <strong>9 Standard Columns:</strong> Student Name | Class | Section | Roll No. | Date of Birth | Gender | Current Address | Father&apos;s Name | Mother&apos;s Name.
           </li>
           <li>
-            <strong>DOB Format:</strong> Must be in <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-800">dd-mm-yyyy</code> (e.g., 15-08-2011). Excel serial dates and <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-800">dd/mm/yyyy</code> are also auto-converted.
+            <strong>Required Fields:</strong> Student Name, Class, Section, Date of Birth, Gender, and Father&apos;s Name.
           </li>
           <li>
-            <strong>Gender:</strong> Must be <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-800">Male</code>, <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-800">Female</code>, or <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-800">Other</code> (abbreviations like M/F are auto-normalized).
+            <strong>Date of Birth:</strong> Accepted format is <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-800 font-mono">dd-mm-yyyy</code> (e.g. 13-12-2011). Slashes and Excel date serials will be automatically detected and converted.
           </li>
           <li>
-            <strong>Registration No:</strong> If omitted, the portal will automatically generate a sequential board registration number.
+            <strong>Blank Roll Numbers:</strong> If left empty, roll numbers will be automatically assigned sequentially (1, 2, 3...) based on the highest existing roll number in the class.
+          </li>
+          <li>
+            <strong>Safe Review:</strong> You can edit any cell directly in the next step, resolve errors, delete unwanted rows, and review duplicate warnings before committing to the school database.
           </li>
         </ul>
       </div>

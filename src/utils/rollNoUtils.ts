@@ -177,7 +177,7 @@ export function renumberStudents(
   if (mode === 'alphabetical') {
     list.sort((a, b) => a.name.localeCompare(b.name));
   } else if (mode === 'regNo') {
-    list.sort((a, b) => a.registrationNo.localeCompare(b.registrationNo));
+    list.sort((a, b) => (a.registrationNo || '').localeCompare(b.registrationNo || ''));
   } else {
     // Current order (sorted by existing roll numbers first)
     list.sort((a, b) => {

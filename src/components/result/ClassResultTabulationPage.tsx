@@ -77,7 +77,7 @@ export const ClassResultTabulationPage: React.FC<ClassResultTabulationPageProps>
       const matchesSearch =
         res.student.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         res.student.rollNo.includes(searchQuery) ||
-        res.student.registrationNo.toLowerCase().includes(searchQuery.toLowerCase());
+        (res.student.registrationNo && res.student.registrationNo.toLowerCase().includes(searchQuery.toLowerCase()));
 
       const matchesSection =
         selectedSection === 'all' || res.student.section === selectedSection;

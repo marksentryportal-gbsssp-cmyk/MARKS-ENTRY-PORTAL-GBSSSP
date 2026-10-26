@@ -23,8 +23,8 @@ const PortalRouter: React.FC = () => {
 
   return (
     <main className="w-full">
-      {/* Universal Page Header Area (portal title, school name, code) */}
-      <PageHeader />
+      {/* School Information Section: visible on Dashboard ONLY */}
+      {currentRoute.tab === 'dashboard' && <PageHeader />}
 
       {/* Routed Active Page */}
       {currentRoute.tab === 'dashboard' && <DashboardPage />}

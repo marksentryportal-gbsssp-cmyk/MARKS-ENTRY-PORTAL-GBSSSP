@@ -37,7 +37,6 @@ export const ExamStudentListPage: React.FC<ExamStudentListPageProps> = ({
     classes,
     exams,
     navigateTo,
-    importantNotifications,
     getStudentsForExam,
     removeStudentFromExam,
     getMarksStatus,
@@ -209,9 +208,14 @@ export const ExamStudentListPage: React.FC<ExamStudentListPageProps> = ({
               </span>
             )}
           </span>
-          <span className="text-[10px] text-slate-400 block font-normal font-mono">
-            Sec: {s.section || 'A'}
-          </span>
+          <div className="flex items-center gap-2 text-[10px] text-slate-500 font-normal">
+            <span className="font-mono bg-slate-100 px-1 rounded text-slate-700">Sec: {s.section || 'A'}</span>
+            {s.currentAddress && (
+              <span className="truncate max-w-[160px]" title={s.currentAddress}>
+                &bull; {s.currentAddress}
+              </span>
+            )}
+          </div>
         </div>
       ),
     },
@@ -356,40 +360,6 @@ export const ExamStudentListPage: React.FC<ExamStudentListPageProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* 1. IMPORTANT NOTIFICATION Card */}
-      <section
-        aria-labelledby="notification-heading"
-        className="bg-white rounded-lg border border-slate-200 shadow-xs p-5 md:p-6"
-      >
-        <div className="border-b border-slate-200 pb-3 mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <ShieldAlert className="w-5 h-5 text-[#b91c1c] shrink-0" />
-            <h2
-              id="notification-heading"
-              className="text-[#b91c1c] font-bold text-base md:text-lg tracking-tight uppercase"
-            >
-              IMPORTANT NOTIFICATION:
-            </h2>
-          </div>
-          <span className="text-[11px] font-semibold text-red-700 bg-red-50 border border-red-200 px-2 py-0.5 rounded">
-            Guidelines &amp; Rules
-          </span>
-        </div>
-
-        <ul className="space-y-2.5 text-xs md:text-sm text-slate-700 list-none leading-relaxed">
-          {importantNotifications.map((note, idx) => (
-            <li
-              key={idx}
-              className="flex items-start gap-2.5 p-2 rounded bg-slate-50/70 border border-slate-100"
-            >
-              <span className="flex items-center justify-center w-4 h-4 rounded-full bg-red-100 text-[#b91c1c] text-[10px] font-bold shrink-0 mt-0.5">
-                {idx + 1}
-              </span>
-              <span>{note}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
 
       {/* Safety Banners */}
       {isFinalSubmitted && (
@@ -497,7 +467,7 @@ export const ExamStudentListPage: React.FC<ExamStudentListPageProps> = ({
             (s) => s.rollNo || '',
             (s) => s.name,
             (s) => s.fatherName,
-            (s) => s.registrationNo,
+            (s) => s.registrationNo || '',
           ]}
           searchPlaceholder="Search roll no, student name, father name, registration no..."
           emptyMessage={`No enrolled students found for ${currentExam.name}. Click "Click to Add Student" or "Bulk Import" above to enroll candidates.`}
