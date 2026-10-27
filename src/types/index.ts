@@ -7,7 +7,25 @@ export type NavigationTab =
   | 'exam-setup'
   | 'checklist'
   | 'final-submit'
-  | 'users';
+  | 'users'
+  | 'bell-mode';
+
+export interface SchoolLogoData {
+  full: string;       // base64 data URL up to 512x512
+  medium: string;     // base64 data URL 192x192
+  icon: string;       // base64 data URL 64x64
+  updatedAt: string;
+  source?: 'upload' | 'default';
+}
+
+export interface LogoPrintSettings {
+  position: 'left' | 'center';
+  size: 'small' | 'medium' | 'large';
+  showLogoInPrint: boolean;
+  bwPrintMode: boolean;
+  showWatermark: boolean;
+  watermarkOpacity: number; // e.g. 0.07 (7%)
+}
 
 export interface RouteState {
   tab: NavigationTab;
@@ -219,6 +237,8 @@ export interface ResultSettings {
   blockPrintingUntilAnnualSubmitted?: boolean;
   autoSaveChecklistPdfToDriveOnFinalSubmit?: boolean;
   showTotalsInChecklist?: boolean;
+  schoolLogo?: SchoolLogoData | null;
+  logoPrintSettings?: LogoPrintSettings;
 }
 
 export interface SubjectResult {
@@ -260,6 +280,7 @@ export interface SchoolInfo {
   email?: string;
   phone?: string;
   logoUrl?: string;
+  logoData?: SchoolLogoData | null;
 }
 
 export interface SupportContact {

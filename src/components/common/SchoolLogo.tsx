@@ -1,78 +1,143 @@
-import React, { useState, useRef } from 'react';
-import { Camera, GraduationCap } from 'lucide-react';
+import React, { useState } from 'react';
+import { GraduationCap } from 'lucide-react';
+import { usePortal } from '../../store/portalStore';
+import { DEFAULT_LOGO_URL } from '../../utils/logoUtils';
 
-interface SchoolLogoProps {
-  size?: 'sm' | 'md' | 'lg';
+export interface SchoolLogoProps {
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | number;
+  shape?: 'circle' | 'square' | 'none';
+  variant?: 'color' | 'white' | 'mono';
+  darkBackground?: boolean;
+  className?: string;
+  alt?: string;
+  onClick?: () => void;
   editable?: boolean;
+  onEditClick?: () => void;
 }
 
-export const SchoolLogo: React.FC<SchoolLogoProps> = ({ size = 'md', editable = true }) => {
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+export const SchoolLogo: React.FC<SchoolLogoProps> = ({
+  size = 'md',
+  shape = 'none',
+  variant = 'color',
+  darkBackground = false,
+  className = '',
+  alt = 'School Logo',
+  onClick,
+  editable = false,
+  onEditClick,
+}) => {
+  const { schoolLogo, schoolInfo, currentUser } = usePortal();
+  const [imgError, setImgError] = useState(false);
 
-  const sizeClasses = {
-    sm: 'w-12 h-12 text-xs',
-    md: 'w-20 h-20 text-sm',
-    lg: 'w-28 h-28 text-base',
-  }[size];
-
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const url = URL.createObjectURL(file);
-      setLogoUrl(url);
-    }
+  // Size mapping (in Tailwind and exact pixel dimensions)
+  const sizeMap: Record<string, { container: string; img: string; px: number }> = {
+    xs: { container: 'w-6 h-6', img: 'w-6 h-6', px: 24 },
+    sm: { container: 'w-10 h-10', img: 'w-10 h-10', px: 40 },
+    md: { container: 'w-16 h-16', img: 'w-16 h-16', px: 64 },
+    lg: { container: 'w-24 h-24', img: 'w-24 h-24', px: 96 },
+    xl: { container: 'w-32 h-32', img: 'w-32 h-32', px: 128 },
   };
 
+  const isNumericSize = typeof size === 'number';
+  const sizeConfig = isNumericSize
+    ? { container: '', img: '', px: size }
+    : sizeMap[size] || sizeMap.md;
+
+  const styleOverride = isNumericSize
+    ? { width: `${size}px`, height: `${size}px` }
+    : undefined;
+
+  // Resolve image source: prefers schoolLogo.full or medium depending on size, fallback to default asset
+  const logoSrc = React.useMemo(() => {
+    if (schoolLogo?.full) {
+      if (sizeConfig.px <= 64 && schoolLogo.icon) return schoolLogo.icon;
+      if (sizeConfig.px <= 192 && schoolLogo.medium) return schoolLogo.medium;
+      return schoolLogo.full;
+    }
+    if (schoolInfo?.logoUrl) return schoolInfo.logoUrl;
+    return DEFAULT_LOGO_URL;
+  }, [schoolLogo, schoolInfo?.logoUrl, sizeConfig.px]);
+
+  // Shape class
+  const shapeClass =
+    shape === 'circle'
+      ? 'rounded-full overflow-hidden'
+      : shape === 'square'
+      ? 'rounded-md overflow-hidden'
+      : '';
+
+  // Filter variants (white, monochrome for B&W prints)
+  const variantClass =
+    variant === 'white'
+      ? 'brightness-0 invert'
+      : variant === 'mono'
+      ? 'grayscale contrast-125'
+      : '';
+
+  // Dark background enhancement: add a soft subtle white ring/drop-shadow so dark navy lozenges stand out clearly
+  const darkBgClass = darkBackground
+    ? 'p-0.5 bg-white/10 ring-1 ring-white/20 shadow-sm rounded-full backdrop-blur-xs'
+    : '';
+
+  const canEdit = editable && currentUser?.role === 'admin' && onEditClick;
+
   return (
-    <div className="relative group flex flex-col items-center">
-      <div
-        className={`${sizeClasses} rounded-full border-2 border-slate-600 bg-slate-800/80 flex items-center justify-center overflow-hidden shadow-inner relative transition-transform duration-200 group-hover:border-teal-400`}
-        title="Gopinath Bordoloi Senior Secondary School Seal"
-      >
-        {logoUrl ? (
-          <img
-            src={logoUrl}
-            alt="School Logo"
-            className="w-full h-full object-cover"
+    <div
+      onClick={onClick}
+      style={styleOverride}
+      className={`relative inline-flex items-center justify-center shrink-0 select-none ${
+        sizeConfig.container
+      } ${shapeClass} ${darkBgClass} ${className} ${
+        onClick ? 'cursor-pointer' : ''
+      }`}
+      title={schoolInfo?.name || 'School Logo'}
+    >
+      {!imgError && logoSrc ? (
+        <img
+          src={logoSrc}
+          alt={alt}
+          onError={() => setImgError(true)}
+          style={styleOverride}
+          className={`object-contain max-w-full max-h-full transition-transform ${
+            sizeConfig.img
+          } ${variantClass}`}
+          loading="eager"
+        />
+      ) : (
+        /* Fallback GBSSS seal badge */
+        <div
+          style={styleOverride}
+          className={`w-full h-full rounded-full bg-slate-800 text-teal-300 border border-teal-500/40 flex flex-col items-center justify-center p-1 text-center shadow-xs`}
+        >
+          <GraduationCap
+            style={{ width: `${Math.max(12, sizeConfig.px * 0.45)}px`, height: `${Math.max(12, sizeConfig.px * 0.45)}px` }}
+            className="text-teal-400 mb-0.5"
           />
-        ) : (
-          <div className="flex flex-col items-center justify-center p-2 text-center select-none">
-            {/* Government / School Seal SVG Emblem */}
-            <div className="w-9 h-9 rounded-full bg-teal-900/60 border border-teal-500/50 flex items-center justify-center text-teal-300 mb-0.5">
-              <GraduationCap className="w-5 h-5" />
-            </div>
-            <span className="text-[9px] font-bold tracking-wider text-slate-200 uppercase leading-none">
+          {sizeConfig.px >= 48 && (
+            <span
+              style={{ fontSize: `${Math.max(8, Math.round(sizeConfig.px * 0.16))}px` }}
+              className="font-bold tracking-wider text-slate-100 uppercase leading-none"
+            >
               GBSSS
             </span>
-            <span className="text-[7px] text-teal-300 font-medium tracking-tight">
-              ESTD.
-            </span>
-          </div>
-        )}
+          )}
+        </div>
+      )}
 
-        {editable && (
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-opacity text-white text-[10px]"
-            title="Click to change logo"
-            aria-label="Upload custom school logo"
-          >
-            <Camera className="w-4 h-4 mb-0.5" />
-            <span>Change</span>
-          </button>
-        )}
-      </div>
-
-      <input
-        type="file"
-        ref={fileInputRef}
-        onChange={handleImageChange}
-        accept="image/*"
-        className="hidden"
-        aria-hidden="true"
-      />
+      {/* Admin Quick Edit Pencil Overlay */}
+      {canEdit && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onEditClick();
+          }}
+          className="absolute inset-0 bg-slate-900/60 opacity-0 hover:opacity-100 flex items-center justify-center text-white text-[10px] font-bold rounded-full transition-opacity cursor-pointer"
+          title="Change School Logo"
+        >
+          Edit
+        </button>
+      )}
     </div>
   );
 };
