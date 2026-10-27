@@ -33,9 +33,19 @@ export const StatusCell: React.FC<StatusCellProps> = ({
   // a) Final Submitted
   if (status === 'FinalSubmitted') {
     return (
-      <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-[#b91c1c]">
-        <CheckCircle2 className="w-4 h-4 text-[#b91c1c] shrink-0" />
-        <span>Successfully Submitted</span>
+      <div className="flex flex-col items-center justify-center gap-0.5 text-xs">
+        <div className="flex items-center justify-center gap-1.5 font-bold text-[#b91c1c]">
+          <CheckCircle2 className="w-4 h-4 text-[#b91c1c] shrink-0" />
+          <span>Successfully Submitted</span>
+        </div>
+        <button
+          type="button"
+          onClick={handleGo}
+          className="text-[11px] text-teal-700 hover:text-teal-900 hover:underline font-medium cursor-pointer"
+          title="View student marks in read-only mode"
+        >
+          View (Read-Only)
+        </button>
       </div>
     );
   }

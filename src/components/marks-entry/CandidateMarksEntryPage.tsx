@@ -828,22 +828,56 @@ export const CandidateMarksEntryPage: React.FC<CandidateMarksEntryPageProps> = (
   return (
     <div className="space-y-3">
       
-      {/* Read-Only Banner if Final Submitted or Outside Dates */}
-      {isReadOnly && (
+      {/* Red Banner if Final Submitted */}
+      {isFinalSubmitted && (
+        <div className="bg-red-50 border-2 border-red-300 rounded-lg p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-red-950 shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <Lock className="w-5 h-5 text-[#b91c1c] shrink-0" />
+            <div className="text-xs">
+              <strong className="font-extrabold uppercase tracking-wide mr-2 text-[#b91c1c]">
+                EXAMINATION FINAL SUBMITTED:
+              </strong>
+              <span>
+                This exam has been <strong>Successfully Submitted</strong>. To make corrections, cancel the Final Submit from the Final Submit page.
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigateTo('/final-submit')}
+            className="px-3.5 py-1.5 bg-[#b91c1c] hover:bg-red-800 text-white font-bold text-xs rounded-md shrink-0 transition-colors cursor-pointer shadow-2xs"
+          >
+            Go to Final Submit
+          </button>
+        </div>
+      )}
+
+      {/* Prominent Yellow Alert for Reopened / Cancelled Final Submit */}
+      {currentExam.cancelHistory && currentExam.cancelHistory.length > 0 && !isFinalSubmitted && (
+        <div className="bg-amber-50 border-2 border-amber-400 rounded-lg p-3.5 flex items-start gap-3 text-amber-950 shadow-xs">
+          <AlertTriangle className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+          <div className="space-y-1 text-xs">
+            <div>
+              <strong className="font-extrabold text-amber-900">Final Submit was cancelled on {currentExam.cancelHistory[0].cancelledAt} for correction: </strong>
+              <span className="italic font-semibold">"{currentExam.cancelHistory[0].reason}"</span>
+            </div>
+            <p className="text-slate-700">
+              Please Final Submit again after making corrections. Marksheets and results will recalculate with any corrected marks.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Outside Dates Notice (only when not final submitted) */}
+      {isOutsideDates && !isFinalSubmitted && (
         <div className="bg-amber-50 border-2 border-amber-300 rounded-lg p-3 flex items-center gap-2.5 text-amber-900 shadow-2xs">
-          {isFinalSubmitted ? (
-            <Lock className="w-4 h-4 text-amber-700 shrink-0" />
-          ) : (
-            <Clock className="w-4 h-4 text-amber-700 shrink-0" />
-          )}
+          <Clock className="w-4 h-4 text-amber-700 shrink-0" />
           <div className="text-xs">
             <span className="font-extrabold uppercase tracking-wider mr-2">
-              {isFinalSubmitted
-                ? 'EXAMINATION FINAL SUBMITTED - READ ONLY MODE'
-                : 'EXAMINATION WINDOW CLOSED - READ ONLY MODE'}
+              EXAMINATION WINDOW CLOSED - READ ONLY MODE
             </span>
             <span className="text-slate-600">
-              Marks entry is currently locked for editing.
+              Marks entry is currently locked for editing outside the scheduled dates ({currentExam.startDate} to {currentExam.endDate}).
             </span>
           </div>
         </div>

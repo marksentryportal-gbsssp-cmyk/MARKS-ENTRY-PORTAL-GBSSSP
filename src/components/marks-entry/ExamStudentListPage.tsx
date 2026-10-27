@@ -363,11 +363,36 @@ export const ExamStudentListPage: React.FC<ExamStudentListPageProps> = ({
 
       {/* Safety Banners */}
       {isFinalSubmitted && (
-        <div className="p-4 bg-red-50 border border-red-300 rounded-lg text-red-900 text-xs md:text-sm flex items-center gap-3 shadow-xs">
-          <ShieldAlert className="w-5 h-5 text-[#b91c1c] shrink-0" />
-          <div>
-            <strong className="font-bold text-[#b91c1c]">Examination Locked: </strong>
-            This exam has been <strong>Successfully Submitted</strong> to ASSEB-DI. Marks can no longer be edited or added.
+        <div className="p-4 bg-red-50 border border-red-300 rounded-lg text-red-900 text-xs md:text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-3">
+            <ShieldAlert className="w-5 h-5 text-[#b91c1c] shrink-0" />
+            <div>
+              <strong className="font-bold text-[#b91c1c]">Examination Locked: </strong>
+              This exam has been <strong>Successfully Submitted</strong>. To make corrections, cancel the Final Submit from the Final Submit page.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigateTo('/final-submit')}
+            className="px-3.5 py-1.5 bg-[#b91c1c] hover:bg-red-800 text-white font-bold text-xs rounded-md shrink-0 transition-colors cursor-pointer shadow-2xs"
+          >
+            Go to Final Submit
+          </button>
+        </div>
+      )}
+
+      {/* Prominent Yellow Alert for Reopened / Cancelled Final Submit */}
+      {currentExam.cancelHistory && currentExam.cancelHistory.length > 0 && !isFinalSubmitted && (
+        <div className="p-4 bg-amber-50 border-2 border-amber-400 rounded-lg text-amber-950 text-xs md:text-sm flex items-start gap-3 shadow-xs">
+          <AlertTriangle className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <div>
+              <strong className="font-extrabold text-amber-900">Final Submit was cancelled on {currentExam.cancelHistory[0].cancelledAt} for correction: </strong>
+              <span className="italic font-semibold">"{currentExam.cancelHistory[0].reason}"</span>
+            </div>
+            <p className="text-xs text-amber-800">
+              Please Final Submit again after making corrections. Marksheets and tabulation results will automatically recalculate with any corrected marks.
+            </p>
           </div>
         </div>
       )}

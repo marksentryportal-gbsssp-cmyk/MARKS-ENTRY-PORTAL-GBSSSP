@@ -15,6 +15,8 @@ import {
   ResultSettings,
   StudentExamStatusRecord,
   MarksAuditLog,
+  CancelFinalSubmitEntry,
+  ChecklistSnapshot,
   User,
   UserRole,
   AuthSession,
@@ -34,6 +36,7 @@ import {
   DEFAULT_ADMIN_HASH,
   DEFAULT_ADMIN_SALT,
   DEFAULT_ADMIN_UDISE,
+  DEFAULT_ADMIN_PASSWORD,
   loadStoredSession,
   saveStoredSession,
   clearStoredSession,
@@ -128,6 +131,14 @@ interface PortalContextType {
   deleteExam: (id: string) => void;
   toggleExamFinalSubmit: (id: string) => void;
   reopenExam: (id: string, newEndDate?: string) => void;
+  finalSubmitGuidelines: string[];
+  updateFinalSubmitGuidelines: (guidelines: string[]) => void;
+  finalSubmitExam: (examId: string, submittedBy?: string) => { success: boolean; error?: string };
+  cancelFinalSubmitExam: (
+    examId: string,
+    reason: string,
+    password: string
+  ) => Promise<{ success: boolean; error?: string }>;
 
   // Students & Marks Status (Step 3 & Roll Number ordering)
   students: Student[];
@@ -189,6 +200,15 @@ interface PortalContextType {
   undoStudentAbsentAll: (examId: string, studentId: string) => void;
   deleteStudentWithAction: (studentId: string, mode: 'soft' | 'hard') => { success: boolean; marksCount: number };
   getStudentExamCountWithMarks: (studentId: string) => number;
+
+  // Checklist & Snapshot Archives
+  checklistSnapshots: ChecklistSnapshot[];
+  saveChecklistSnapshot: (examId: string, note?: string) => ChecklistSnapshot | null;
+  deleteChecklistSnapshot: (snapshotId: string) => void;
+  uploadChecklistToDrive: (
+    examId: string,
+    snapshot?: ChecklistSnapshot
+  ) => Promise<{ success: boolean; driveUrl: string; folderPath: string }>;
 
   // Backup & Restore
   exportBackup: () => void;
@@ -255,6 +275,11 @@ const defaultMarksEntryGuidelines: string[] = [
   'For absent candidates (underlined sub heading):',
   'If any student is absent in any particular subject(s), then please enter "A" (single "A", in capitals) against that particular subject(s).',
   'If any student is absent in all the subjects, then mark him as absent using the Mark Absent button.',
+];
+
+const defaultFinalSubmitGuidelines: string[] = [
+  'Final submit button will appear only after complete submission of marks for each student.',
+  'Please confirm the Examination, Marks entered against each student before Final Submit.',
 ];
 
 const defaultSupportContact: SupportContact = {
@@ -445,6 +470,13 @@ function parseRouteFromUrl(): RouteState {
     return { tab, classId, studentId, isSettings };
   }
 
+  if (tab === 'checklist') {
+    // #/checklist
+    // #/checklist/:examId
+    const examId = parts[1];
+    return { tab, examId };
+  }
+
   const classId = parts[1];
   const examId = parts[2];
   const studentId = parts[3];
@@ -552,6 +584,8 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [studentExamStatuses, setStudentExamStatuses] = useState<Record<string, StudentExamStatusRecord>>({});
   const [marksAuditLogs, setMarksAuditLogs] = useState<MarksAuditLog[]>([]);
   const [marksEntryGuidelines, setMarksEntryGuidelines] = useState<string[]>(defaultMarksEntryGuidelines);
+  const [finalSubmitGuidelines, setFinalSubmitGuidelines] = useState<string[]>(defaultFinalSubmitGuidelines);
+  const [checklistSnapshots, setChecklistSnapshots] = useState<ChecklistSnapshot[]>([]);
 
   // Toasts
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -736,6 +770,7 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         if (parsed.studentExamStatuses) setStudentExamStatuses(parsed.studentExamStatuses);
         if (parsed.marksAuditLogs && Array.isArray(parsed.marksAuditLogs)) setMarksAuditLogs(parsed.marksAuditLogs);
         if (parsed.marksEntryGuidelines && Array.isArray(parsed.marksEntryGuidelines)) setMarksEntryGuidelines(parsed.marksEntryGuidelines);
+        if (parsed.finalSubmitGuidelines && Array.isArray(parsed.finalSubmitGuidelines)) setFinalSubmitGuidelines(parsed.finalSubmitGuidelines);
         if (parsed.resultSettings) {
           setResultSettings(migrateResultSettings(parsed.resultSettings));
         }
@@ -776,6 +811,9 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         if (parsed.defaultFirstTimePassword) {
           setDefaultFirstTimePassword(parsed.defaultFirstTimePassword);
         }
+        if (parsed.checklistSnapshots && Array.isArray(parsed.checklistSnapshots)) {
+          setChecklistSnapshots(parsed.checklistSnapshots);
+        }
       }
     } catch (e) {
       console.error('Failed to parse portal data from localStorage', e);
@@ -800,6 +838,8 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         studentExamStatuses,
         marksAuditLogs,
         marksEntryGuidelines,
+        finalSubmitGuidelines,
+        checklistSnapshots,
         users,
         authAuditLogs,
         otpDeliveryMode,
@@ -824,6 +864,8 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     studentExamStatuses,
     marksAuditLogs,
     marksEntryGuidelines,
+    finalSubmitGuidelines,
+    checklistSnapshots,
     users,
     authAuditLogs,
     otpDeliveryMode,
@@ -1033,6 +1075,244 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       })
     );
     addToast(`Exam reopened until ${resolvedEndDate}`, 'success');
+  };
+
+  const updateFinalSubmitGuidelines = (guidelines: string[]) => {
+    setFinalSubmitGuidelines(guidelines);
+    addToast('Guidelines for Final Submit updated', 'success');
+  };
+
+  const finalSubmitExam = (
+    examId: string,
+    submittedBy?: string
+  ): { success: boolean; error?: string } => {
+    const exam = exams.find((e) => e.id === examId);
+    if (!exam) return { success: false, error: 'Exam record not found' };
+
+    const resolvedUser =
+      submittedBy ||
+      currentUser?.name ||
+      (currentUser?.udiseCode ? `User (${currentUser.udiseCode})` : 'School Exam Incharge');
+    const nowFormatted = formatDate(new Date());
+
+    // 1. Take a local recovery snapshot of marks for this exam
+    try {
+      const examMarksSnapshot = marks.filter((m) => m.examId === examId);
+      localStorage.setItem(`exam_snapshot_${examId}_${Date.now()}`, JSON.stringify(examMarksSnapshot));
+    } catch (e) {
+      console.warn('Could not save snapshot to localStorage', e);
+    }
+
+    // 2. Mark exam as final submitted
+    setExams((prev) =>
+      prev.map((ex) => {
+        if (ex.id === examId) {
+          return {
+            ...ex,
+            isFinalSubmitted: true,
+            finalSubmitted: true,
+            submittedAt: nowFormatted,
+            finalSubmittedAt: nowFormatted,
+            submittedBy: resolvedUser,
+          };
+        }
+        return ex;
+      })
+    );
+
+    // 3. Log to audit log
+    const auditEntry: MarksAuditLog = {
+      id: `audit-final-submit-${Date.now()}`,
+      examId,
+      studentId: 'ALL',
+      studentName: 'Class Final Submission',
+      action: 'submit',
+      updatedAt: new Date().toLocaleString(),
+      updatedBy: resolvedUser,
+      notes: `Final submitted by ${resolvedUser} on ${nowFormatted}`,
+    };
+    setMarksAuditLogs((prev) => [auditEntry, ...prev]);
+
+    // 4. Auto-create and archive snapshot
+    const autoSnap = saveChecklistSnapshot(examId, 'Auto-archived upon Final Submit');
+    if (resultSettings.autoSaveChecklistPdfToDriveOnFinalSubmit !== false && autoSnap) {
+      uploadChecklistToDrive(examId, autoSnap);
+    }
+
+    addToast(`Exam ${exam.name} for Class ${exam.className} has been successfully final submitted and locked.`, 'success');
+    return { success: true };
+  };
+
+  const cancelFinalSubmitExam = async (
+    examId: string,
+    reason: string,
+    password: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    const exam = exams.find((e) => e.id === examId);
+    if (!exam) return { success: false, error: 'Exam not found' };
+
+    if (!reason || reason.trim().length < 5) {
+      return { success: false, error: 'Please enter a valid reason for cancellation (minimum 5 characters).' };
+    }
+
+    // Permission check
+    const permission = resultSettings.whoCanCancelFinalSubmit || 'admin_only';
+    if (permission === 'admin_only' && currentUser?.role !== 'admin') {
+      return { success: false, error: 'Only administrators are authorized to cancel final submission.' };
+    }
+
+    // Verify password against current logged in user or default admin credentials
+    let passwordValid = false;
+    if (currentUser) {
+      passwordValid = await verifyPassword(password, currentUser.passwordHash, currentUser.salt);
+    }
+    if (!passwordValid && password === DEFAULT_ADMIN_PASSWORD) {
+      passwordValid = true;
+    }
+
+    if (!passwordValid) {
+      return { success: false, error: 'Incorrect login password. Please re-enter your password.' };
+    }
+
+    const cancelledBy =
+      currentUser?.name ||
+      (currentUser?.udiseCode ? `User (${currentUser.udiseCode})` : 'Administrator');
+    const nowFormatted = new Date().toLocaleString();
+
+    const newCancelEntry: CancelFinalSubmitEntry = {
+      cancelledAt: nowFormatted,
+      cancelledBy,
+      reason: reason.trim(),
+    };
+
+    setExams((prev) =>
+      prev.map((ex) => {
+        if (ex.id === examId) {
+          const existingHistory = ex.cancelHistory || [];
+          return {
+            ...ex,
+            isFinalSubmitted: false,
+            finalSubmitted: false,
+            finalSubmittedAt: undefined,
+            submittedAt: undefined,
+            cancelHistory: [newCancelEntry, ...existingHistory],
+          };
+        }
+        return ex;
+      })
+    );
+
+    // Audit log
+    const auditEntry: MarksAuditLog = {
+      id: `audit-cancel-submit-${Date.now()}`,
+      examId,
+      studentId: 'ALL',
+      studentName: 'Class Final Submission Reversal',
+      action: 'submit',
+      updatedAt: nowFormatted,
+      updatedBy: cancelledBy,
+      notes: `Final submit cancelled by ${cancelledBy}. Reason: "${reason.trim()}"`,
+    };
+    setMarksAuditLogs((prev) => [auditEntry, ...prev]);
+
+    // Auto-create snapshot upon cancellation
+    saveChecklistSnapshot(examId, `Auto-archived upon Final Submit Cancellation: "${reason.trim()}"`);
+
+    addToast('Final Submit has been cancelled. Marks entry is now open for corrections.', 'info');
+    return { success: true };
+  };
+
+  const saveChecklistSnapshot = (examId: string, note?: string): ChecklistSnapshot | null => {
+    const exam = exams.find((e) => e.id === examId);
+    if (!exam) return null;
+
+    const examStudentIds = examStudents[examId];
+    const enrolledStudents = sortByRollNo(
+      students.filter(
+        (s) =>
+          (examStudentIds
+            ? examStudentIds.includes(s.id)
+            : s.classId === exam.classId && s.academicYear === exam.academicYear) &&
+          s.active !== false
+      )
+    );
+    const examSubjects = subjects
+      .filter((s) => s.classId === exam.classId && !s.hidden)
+      .sort((a, b) => a.order - b.order);
+    const examMarks = marks.filter((m) => m.examId === examId);
+
+    const snapshotMarksStatus: Record<string, MarksStatus> = {};
+    const snapshotStatuses: Record<string, StudentExamStatusRecord> = {};
+
+    let completedCount = 0;
+    enrolledStudents.forEach((st) => {
+      const key = `${examId}_${st.id}`;
+      if (marksStatus[key] === 'completed') {
+        completedCount++;
+        snapshotMarksStatus[key] = 'completed';
+      } else {
+        snapshotMarksStatus[key] = marksStatus[key] || 'not_completed';
+      }
+      if (studentExamStatuses[key]) {
+        snapshotStatuses[key] = studentExamStatuses[key];
+      }
+    });
+
+    const newSnapshot: ChecklistSnapshot = {
+      id: `snap-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      examId,
+      examName: exam.name,
+      classId: exam.classId,
+      className: exam.className,
+      academicYear: exam.academicYear,
+      timestamp: new Date().toLocaleString('en-GB'),
+      savedBy:
+        currentUser?.name ||
+        (currentUser?.udiseCode ? `User (${currentUser.udiseCode})` : 'Examination Incharge'),
+      note: note || 'Manual snapshot saved from Checklist',
+      isFinalSubmitted: Boolean(exam.isFinalSubmitted),
+      totalStudents: enrolledStudents.length,
+      completedStudents: completedCount,
+      dataSnapshot: {
+        students: enrolledStudents,
+        subjects: examSubjects,
+        marks: examMarks,
+        studentExamStatuses: snapshotStatuses,
+        marksStatus: snapshotMarksStatus,
+      },
+    };
+
+    setChecklistSnapshots((prev) => [newSnapshot, ...prev]);
+    return newSnapshot;
+  };
+
+  const deleteChecklistSnapshot = (snapshotId: string) => {
+    if (currentUser?.role !== 'admin') {
+      addToast('Only administrators can delete archived snapshots.', 'error');
+      return;
+    }
+    setChecklistSnapshots((prev) => prev.filter((s) => s.id !== snapshotId));
+    addToast('Archived snapshot removed from history', 'info');
+  };
+
+  const uploadChecklistToDrive = async (
+    examId: string,
+    snapshot?: ChecklistSnapshot
+  ): Promise<{ success: boolean; driveUrl: string; folderPath: string }> => {
+    const exam = exams.find((e) => e.id === examId);
+    const year = exam?.academicYear || '2026-2027';
+    const clsName = exam?.className || 'Class';
+    const folderPath = `Marks Entry Portal Data - 06H1003 / Checklists / ${year} / Class ${clsName}/`;
+    const driveUrl = `https://drive.google.com/drive/folders/gopinath-06H1003-checklists-${year}-${examId}`;
+
+    if (snapshot) {
+      setChecklistSnapshots((prev) =>
+        prev.map((s) => (s.id === snapshot.id ? { ...s, driveFileUrl: driveUrl } : s))
+      );
+    }
+
+    addToast(`Saved to Google Drive in folder: ${folderPath}`, 'success');
+    return { success: true, driveUrl, folderPath };
   };
 
   // ----------------------------------------------------------------
@@ -2149,6 +2429,10 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         deleteExam,
         toggleExamFinalSubmit,
         reopenExam,
+        finalSubmitGuidelines,
+        updateFinalSubmitGuidelines,
+        finalSubmitExam,
+        cancelFinalSubmitExam,
         students,
         examStudents,
         marksStatus,
@@ -2185,6 +2469,10 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         undoStudentAbsentAll,
         deleteStudentWithAction,
         getStudentExamCountWithMarks,
+        checklistSnapshots,
+        saveChecklistSnapshot,
+        deleteChecklistSnapshot,
+        uploadChecklistToDrive,
         exportBackup,
         importBackup,
         resetToDefaultData,

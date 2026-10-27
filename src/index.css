@@ -46,4 +46,10 @@
     break-after: page !important;
     margin-bottom: 0 !important;
   }
+
+  .print-break-inside-avoid,
+  [class*="break-inside-avoid"] {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
 }

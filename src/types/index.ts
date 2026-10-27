@@ -32,6 +32,12 @@ export interface ExamType {
   order: number;
 }
 
+export interface CancelFinalSubmitEntry {
+  cancelledAt: string;
+  cancelledBy: string;
+  reason: string;
+}
+
 export interface ExamRecord {
   id: string;
   name: string;
@@ -46,6 +52,11 @@ export interface ExamRecord {
   finalSubmittedAt?: string;
   totalStudents?: number;
   marksEnteredCount?: number;
+  // Enhanced final submit metadata
+  finalSubmitted?: boolean;
+  submittedAt?: string;
+  submittedBy?: string;
+  cancelHistory?: CancelFinalSubmitEntry[];
 }
 
 export type ExamStatus = 'FinalSubmitted' | 'Open' | 'Closed' | 'NotStarted';
@@ -70,12 +81,36 @@ export interface Student {
 
 export type MarksStatus = 'not_completed' | 'completed';
 
-export type MarkComponentType = 'descriptive' | 'practical' | 'ia';
+export type MarkComponentType = 'objective' | 'descriptive' | 'practical' | 'ia';
 
 export interface SubjectExamComponentConfig {
+  objective?: number;   // Objective / MCQ part
   descriptive?: number; // Theory / Descriptive part
   practical?: number;   // Practical part
   ia?: number;          // Internal Assessment part
+}
+
+export interface ChecklistSnapshot {
+  id: string;
+  examId: string;
+  examName: string;
+  classId: string;
+  className: string;
+  academicYear: string;
+  timestamp: string;
+  savedBy: string;
+  note?: string;
+  isFinalSubmitted: boolean;
+  driveFileUrl?: string;
+  totalStudents: number;
+  completedStudents: number;
+  dataSnapshot: {
+    students: Student[];
+    subjects: Subject[];
+    marks: MarkRecord[];
+    studentExamStatuses: Record<string, StudentExamStatusRecord>;
+    marksStatus: Record<string, MarksStatus>;
+  };
 }
 
 export interface StudentMarksEntry {
@@ -179,6 +214,11 @@ export interface ResultSettings {
   schoolLogoBase64?: string;
   principalSignatureBase64?: string;
   teacherSignatureBase64?: string;
+  // Permissions & Policy
+  whoCanCancelFinalSubmit?: 'admin_only' | 'admin_and_teachers';
+  blockPrintingUntilAnnualSubmitted?: boolean;
+  autoSaveChecklistPdfToDriveOnFinalSubmit?: boolean;
+  showTotalsInChecklist?: boolean;
 }
 
 export interface SubjectResult {

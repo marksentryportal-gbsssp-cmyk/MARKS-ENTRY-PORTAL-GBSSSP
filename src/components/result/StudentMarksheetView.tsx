@@ -35,6 +35,7 @@ export const StudentMarksheetView: React.FC<StudentMarksheetViewProps> = ({
     marks,
     resultSettings,
     schoolInfo,
+    currentUser,
     navigateTo,
   } = usePortal();
 
@@ -44,6 +45,17 @@ export const StudentMarksheetView: React.FC<StudentMarksheetViewProps> = ({
   const [showWeightedBreakdown, setShowWeightedBreakdown] = useState(
     resultSettings.showWeightedBreakdown !== false
   );
+  const [adminOverridePrint, setAdminOverridePrint] = useState(false);
+
+  // Check if exams for this class are final submitted
+  const classExams = useMemo(
+    () => exams.filter((e) => e.classId === classId && e.academicYear === currentAcademicYear),
+    [exams, classId, currentAcademicYear]
+  );
+  const annualExam = classExams.find((e) => e.examTypeId === 'annual');
+  const isAnnualSubmitted = Boolean(annualExam?.isFinalSubmitted);
+  const isAllFinalSubmitted = classExams.length > 0 && classExams.every((e) => Boolean(e.isFinalSubmitted));
+  const isProvisional = !isAllFinalSubmitted;
 
   // Compute results for the entire class to calculate rank, topper, percentiles
   const classResults = useMemo(() => {
@@ -73,7 +85,29 @@ export const StudentMarksheetView: React.FC<StudentMarksheetViewProps> = ({
       ? classResults[currentResultIndex + 1]
       : null;
 
+  const isPrintBlocked =
+    (resultSettings.blockPrintingUntilAnnualSubmitted !== false) &&
+    !isAnnualSubmitted &&
+    !adminOverridePrint;
+
   const handlePrint = () => {
+    if (isPrintBlocked) {
+      if (currentUser?.role === 'admin') {
+        if (
+          window.confirm(
+            'Notice: Annual examination marks have not been final submitted yet. As an Administrator, do you want to override and print this provisional marksheet?'
+          )
+        ) {
+          setAdminOverridePrint(true);
+          setTimeout(() => window.print(), 100);
+        }
+      } else {
+        alert(
+          'Printing of final marksheets is locked until the Annual Examination is final submitted.'
+        );
+      }
+      return;
+    }
     window.print();
   };
 
@@ -247,6 +281,15 @@ export const StudentMarksheetView: React.FC<StudentMarksheetViewProps> = ({
           <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] pointer-events-none select-none">
             <Award className="w-96 h-96 text-teal-900" />
           </div>
+
+          {/* Light-grey diagonal PROVISIONAL watermark when not final submitted */}
+          {isProvisional && (
+            <div className="pointer-events-none select-none absolute inset-0 flex items-center justify-center overflow-hidden z-10 opacity-[0.14]">
+              <span className="text-7xl sm:text-8xl md:text-9xl font-black text-slate-700 uppercase tracking-widest -rotate-45">
+                PROVISIONAL
+              </span>
+            </div>
+          )}
 
           {/* 1. Official Header */}
           <div className="text-center pb-5 border-b-2 border-slate-800 relative">
@@ -768,7 +811,13 @@ export const StudentMarksheetView: React.FC<StudentMarksheetViewProps> = ({
             </div>
           </div>
 
-          <div className="mt-6 pt-2 border-t border-slate-200 text-center text-[10px] text-slate-400">
+          {isProvisional && (
+            <div className="mt-3 text-center text-[11px] text-amber-800 font-bold bg-amber-50/80 border border-dashed border-amber-300 py-1 rounded">
+              Provisional - marks not yet final submitted
+            </div>
+          )}
+
+          <div className="mt-4 pt-2 border-t border-slate-200 text-center text-[10px] text-slate-400">
             This is an official computer-generated Progress Report verified under the ASSEB Div-I portal guidelines.
           </div>
         </div>

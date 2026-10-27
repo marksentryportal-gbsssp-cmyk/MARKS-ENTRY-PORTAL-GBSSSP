@@ -64,6 +64,12 @@ export const ResultSettingsPage: React.FC = () => {
   const [showWeightedBreakdown, setShowWeightedBreakdown] = useState(
     resultSettings.showWeightedBreakdown !== false
   );
+  const [whoCanCancelFinalSubmit, setWhoCanCancelFinalSubmit] = useState<'admin_only' | 'admin_and_teachers'>(
+    resultSettings.whoCanCancelFinalSubmit || 'admin_only'
+  );
+  const [blockPrintingUntilAnnualSubmitted, setBlockPrintingUntilAnnualSubmitted] = useState<boolean>(
+    resultSettings.blockPrintingUntilAnnualSubmitted !== false
+  );
 
   // Grade scale
   const [localGradeScale, setLocalGradeScale] = useState<GradeScaleItem[]>(
@@ -216,6 +222,8 @@ export const ResultSettingsPage: React.FC = () => {
       showAttendance,
       showRemarks,
       showAddress,
+      whoCanCancelFinalSubmit,
+      blockPrintingUntilAnnualSubmitted,
     });
   };
 
@@ -1200,6 +1208,52 @@ export const ResultSettingsPage: React.FC = () => {
                 </div>
               </label>
             </div>
+
+            {/* Final Submit & Lock Security Policy */}
+            <div className="pt-4 border-t border-slate-200 space-y-4">
+              <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                Final Submission &amp; Printing Lock Policy
+              </h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+                  <label className="text-xs font-bold text-slate-800 block">
+                    Who can cancel Final Submit:
+                  </label>
+                  <p className="text-[11px] text-slate-500">
+                    Controls whether subject teachers or only school administrators can unlock a final-submitted examination.
+                  </p>
+                  <select
+                    value={whoCanCancelFinalSubmit}
+                    onChange={(e) =>
+                      setWhoCanCancelFinalSubmit(e.target.value as 'admin_only' | 'admin_and_teachers')
+                    }
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded bg-white font-semibold focus:outline-teal-600"
+                  >
+                    <option value="admin_only">Admin Only (Default &amp; Recommended)</option>
+                    <option value="admin_and_teachers">Admin and Teachers</option>
+                  </select>
+                </div>
+
+                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    id="block-printing"
+                    checked={blockPrintingUntilAnnualSubmitted}
+                    onChange={(e) => setBlockPrintingUntilAnnualSubmitted(e.target.checked)}
+                    className="mt-1 w-4 h-4 text-teal-600 rounded"
+                  />
+                  <label htmlFor="block-printing" className="cursor-pointer">
+                    <span className="text-xs font-bold text-slate-800 block">
+                      Block printing of final marksheets until Annual exam is final submitted
+                    </span>
+                    <span className="text-[11px] text-slate-500 block mt-0.5">
+                      Prevents printing unverified or incomplete marksheet progress reports. Administrators can still override and print provisional reports with confirmation.
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -1439,12 +1493,14 @@ export const ResultSettingsPage: React.FC = () => {
                   <div className="space-y-3 pt-1">
                     {examTypes.map((et) => {
                       const currentComp = newSubComponents[et.id] || {
+                        objective: 0,
                         descriptive: et.id.includes('eval') ? 50 : 100,
                         practical: 0,
                         ia: 0,
                       };
 
                       const compTotal =
+                        (Number(currentComp.objective) || 0) +
                         (Number(currentComp.descriptive) || 0) +
                         (Number(currentComp.practical) || 0) +
                         (Number(currentComp.ia) || 0);
@@ -1452,7 +1508,7 @@ export const ResultSettingsPage: React.FC = () => {
                       return (
                         <div
                           key={et.id}
-                          className="bg-white p-2.5 rounded border border-slate-200 grid grid-cols-1 sm:grid-cols-4 gap-2 items-center"
+                          className="bg-white p-2.5 rounded border border-slate-200 grid grid-cols-1 sm:grid-cols-5 gap-2 items-center"
                         >
                           <div>
                             <span className="font-bold text-slate-800 block text-xs">
@@ -1461,6 +1517,29 @@ export const ResultSettingsPage: React.FC = () => {
                             <span className="text-[10px] text-slate-500 font-mono">
                               Total: <strong>{compTotal}</strong>
                             </span>
+                          </div>
+
+                          <div>
+                            <label className="text-[10px] font-semibold text-slate-600 block mb-0.5">
+                              Objective (MCQ)
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={currentComp.objective ?? ''}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                setNewSubComponents((prev) => ({
+                                  ...prev,
+                                  [et.id]: {
+                                    ...(prev[et.id] || { descriptive: 0, practical: 0, ia: 0 }),
+                                    objective: val,
+                                  },
+                                }));
+                              }}
+                              placeholder="0 (NA)"
+                              className="w-full px-2 py-1 font-mono text-center border border-slate-300 rounded text-xs"
+                            />
                           </div>
 
                           <div>
@@ -1476,7 +1555,7 @@ export const ResultSettingsPage: React.FC = () => {
                                 setNewSubComponents((prev) => ({
                                   ...prev,
                                   [et.id]: {
-                                    ...(prev[et.id] || { practical: 0, ia: 0 }),
+                                    ...(prev[et.id] || { objective: 0, practical: 0, ia: 0 }),
                                     descriptive: val,
                                   },
                                 }));
@@ -1499,7 +1578,7 @@ export const ResultSettingsPage: React.FC = () => {
                                 setNewSubComponents((prev) => ({
                                   ...prev,
                                   [et.id]: {
-                                    ...(prev[et.id] || { descriptive: 0, ia: 0 }),
+                                    ...(prev[et.id] || { objective: 0, descriptive: 0, ia: 0 }),
                                     practical: val,
                                   },
                                 }));
@@ -1522,7 +1601,7 @@ export const ResultSettingsPage: React.FC = () => {
                                 setNewSubComponents((prev) => ({
                                   ...prev,
                                   [et.id]: {
-                                    ...(prev[et.id] || { descriptive: 0, practical: 0 }),
+                                    ...(prev[et.id] || { objective: 0, descriptive: 0, practical: 0 }),
                                     ia: val,
                                   },
                                 }));

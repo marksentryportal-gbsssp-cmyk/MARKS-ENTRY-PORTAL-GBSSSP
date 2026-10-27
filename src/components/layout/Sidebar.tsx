@@ -24,15 +24,21 @@ interface NavItem {
   adminOnly?: boolean;
 }
 
-const baseNavItems: NavItem[] = [
+const topNavItems: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
   { id: 'marks-entry', label: 'Marks Entry', path: '/marks-entry', icon: ClipboardPen },
   { id: 'result', label: 'Result', path: '/result', icon: Award },
-  { id: 'exam-setup', label: 'Exam Setup', path: '/exam-setup', icon: Settings },
   { id: 'checklist', label: 'Checklist', path: '/checklist', icon: ListChecks },
   { id: 'final-submit', label: 'Final Submit', path: '/final-submit', icon: SendHorizontal },
   { id: 'users', label: 'User Management', path: '/users', icon: UsersIcon, adminOnly: true },
 ];
+
+const examSetupItem: NavItem = {
+  id: 'exam-setup',
+  label: 'Exam Setup',
+  path: '/exam-setup',
+  icon: Settings,
+};
 
 export const Sidebar: React.FC = () => {
   const {
@@ -49,6 +55,33 @@ export const Sidebar: React.FC = () => {
   const handleNavClick = (path: string) => {
     navigateTo(path);
     setIsMobileDrawerOpen(false);
+  };
+
+  const renderNavItem = (item: NavItem) => {
+    const Icon = item.icon;
+    const isActive = currentRoute.tab === item.id;
+
+    return (
+      <button
+        key={item.id}
+        type="button"
+        onClick={() => handleNavClick(item.path)}
+        className={`w-full flex items-center gap-3 px-3.5 py-3 text-sm font-medium transition-all text-left group cursor-pointer ${
+          isActive
+            ? 'bg-[#334155] text-white border-l-4 border-[#3b82f6] shadow-sm pl-[10px]'
+            : 'text-slate-300 hover:text-white hover:bg-slate-800/80 border-l-4 border-transparent pl-[10px]'
+        }`}
+      >
+        <Icon
+          className={`w-5 h-5 shrink-0 transition-colors ${
+            isActive
+              ? 'text-blue-400'
+              : 'text-slate-400 group-hover:text-slate-200'
+          }`}
+        />
+        <span className="truncate">{item.label}</span>
+      </button>
+    );
   };
 
   const sidebarContent = (
@@ -86,41 +119,22 @@ export const Sidebar: React.FC = () => {
           </div>
         </div>
 
-        {/* Menu Items */}
+        {/* Menu Items (Dashboard, Marks Entry, Result, Checklist, Final Submit) */}
         <nav className="mt-4 px-2 space-y-1" aria-label="Portal Navigation">
-          {baseNavItems
+          {topNavItems
             .filter((item) => !item.adminOnly || currentUser?.role === 'admin')
-            .map((item) => {
-            const Icon = item.icon;
-            const isActive = currentRoute.tab === item.id;
-
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => handleNavClick(item.path)}
-                className={`w-full flex items-center gap-3 px-3.5 py-3 text-sm font-medium transition-all text-left group cursor-pointer ${
-                  isActive
-                    ? 'bg-[#334155] text-white border-l-4 border-[#3b82f6] shadow-sm pl-[10px]'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-800/80 border-l-4 border-transparent pl-[10px]'
-                }`}
-              >
-                <Icon
-                  className={`w-5 h-5 shrink-0 transition-colors ${
-                    isActive
-                      ? 'text-blue-400'
-                      : 'text-slate-400 group-hover:text-slate-200'
-                  }`}
-                />
-                <span className="truncate">{item.label}</span>
-              </button>
-            );
-          })}
+            .map((item) => renderNavItem(item))}
         </nav>
       </div>
 
-      {/* Bottom: WhatsApp Technical Support Box (Yellow Text) */}
-      <div className="p-3 m-3 rounded-lg bg-slate-900/90 border border-amber-500/30 shadow-md">
+      {/* Relocated Exam Setup in the empty space above WhatsApp Technical Support */}
+      <div className="mt-auto">
+        <div className="px-2 mb-2">
+          {renderNavItem(examSetupItem)}
+        </div>
+
+        {/* Bottom: WhatsApp Technical Support Box (Yellow Text) */}
+        <div className="p-3 m-3 rounded-lg bg-slate-900/90 border border-amber-500/30 shadow-md">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-1.5 text-amber-300 text-xs font-bold tracking-tight">
             <MessageCircle className="w-4 h-4 text-amber-400 shrink-0" />
@@ -164,7 +178,8 @@ export const Sidebar: React.FC = () => {
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 
   return (
     <>

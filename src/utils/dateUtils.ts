@@ -97,3 +97,67 @@ export function getExamStatus(
 
   return 'Open';
 }
+
+export interface ExamCompletionInfo {
+  status: 'not_done' | 'pending' | 'completed' | 'submitted';
+  label: string;
+  colorClass: string;
+  badgeClass: string;
+  completedCount: number;
+  totalCount: number;
+  pendingCount: number;
+}
+
+export function getExamCompletionStatus(
+  isFinalSubmitted: boolean,
+  completedCount: number,
+  totalCount: number
+): ExamCompletionInfo {
+  const pendingCount = Math.max(0, totalCount - completedCount);
+
+  if (isFinalSubmitted) {
+    return {
+      status: 'submitted',
+      label: 'Successfully Submitted',
+      colorClass: 'text-[#b91c1c] font-bold',
+      badgeClass: 'bg-red-50 text-[#b91c1c] border-red-200',
+      completedCount,
+      totalCount,
+      pendingCount,
+    };
+  }
+
+  if (totalCount === 0 || completedCount === 0) {
+    return {
+      status: 'not_done',
+      label: 'Marks Entry Not done',
+      colorClass: 'text-[#0f766e] font-semibold',
+      badgeClass: 'bg-teal-50 text-[#0f766e] border-teal-200',
+      completedCount,
+      totalCount,
+      pendingCount,
+    };
+  }
+
+  if (completedCount < totalCount) {
+    return {
+      status: 'pending',
+      label: `Marks Entry Pending (${completedCount} of ${totalCount} done)`,
+      colorClass: 'text-amber-700 font-semibold',
+      badgeClass: 'bg-amber-50 text-amber-800 border-amber-200',
+      completedCount,
+      totalCount,
+      pendingCount,
+    };
+  }
+
+  return {
+    status: 'completed',
+    label: 'Marks Entry Completed',
+    colorClass: 'text-emerald-700 font-semibold',
+    badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+    completedCount,
+    totalCount,
+    pendingCount: 0,
+  };
+}
