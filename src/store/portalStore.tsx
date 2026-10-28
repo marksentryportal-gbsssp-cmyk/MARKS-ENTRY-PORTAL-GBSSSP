@@ -21,6 +21,7 @@ import {
   UserRole,
   AuthSession,
   AuthAuditLog,
+  SchoolLogoData,
 } from '../types';
 import { formatDate } from '../utils/dateUtils';
 import { initialStudents } from '../data/seedStudents';
@@ -42,10 +43,26 @@ import {
   clearStoredSession,
 } from '../services/authService';
 import {
+  startSession,
+  endSession,
+  getSession,
+  isAuthenticated,
+  subscribeToSession,
+  performSafeLogout,
+  cleanupUiOverlayAndUnlockScroll,
+  wasJustLoggedOut,
+  SessionV1,
+} from '../services/sessionService';
+import {
   sortByRollNo,
   getHighestRollNo,
   getOrderedExamStudents as getOrderedExamStudentsUtil,
 } from '../utils/rollNoUtils';
+import {
+  loadDefaultSchoolLogoData,
+  updateBrowserFaviconAndTitle,
+  updateDynamicManifest,
+} from '../utils/logoUtils';
 
 interface PortalContextType {
   // Routing
@@ -102,6 +119,8 @@ interface PortalContextType {
   // School info & Support
   schoolInfo: SchoolInfo;
   updateSchoolInfo: (info: Partial<SchoolInfo>) => void;
+  schoolLogo: SchoolLogoData | null;
+  updateSchoolLogo: (logo: Partial<SchoolLogoData> | null) => void;
   supportContact: SupportContact;
   updateSupportNumbers: (numbers: string[]) => void;
   importantNotifications: string[];
@@ -448,11 +467,13 @@ function parseRouteFromUrl(): RouteState {
     'checklist',
     'final-submit',
     'users',
+    'bell-mode',
+    'diagnostics',
   ];
 
   const tab = validTabs.includes(mainTab) ? mainTab : 'dashboard';
 
-  if (tab === 'login' || tab === 'forgot-password' || tab === 'users') {
+  if (tab === 'login' || tab === 'forgot-password' || tab === 'users' || tab === 'bell-mode' || tab === 'diagnostics') {
     return { tab };
   }
 
@@ -544,11 +565,51 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [isSupportEditOpen, setIsSupportEditOpen] = useState(false);
   const [isSupportModalOpen, setIsSupportModalOpen] = useState(false);
 
-  // Authentication & Session
-  const [session, setSession] = useState<AuthSession | null>(() => loadStoredSession());
+  // Authentication & Session (controlled by sessionService single source of truth)
+  const [session, setSession] = useState<AuthSession | null>(() => {
+    if (wasJustLoggedOut()) return null;
+    const s = getSession();
+    if (!s) return null;
+    return {
+      userId: s.userId,
+      user: {
+        id: s.userId,
+        udiseCode: s.udiseCode,
+        name: s.userName,
+        role: s.role,
+        passwordHash: '',
+        salt: '',
+        mustChangePassword: false,
+        failedAttempts: 0,
+        active: true,
+      },
+      token: s.sessionId,
+      expiresAt: s.expiresAt,
+      keepSignedIn: s.remember,
+      lastActivityAt: s.createdAt,
+    };
+  });
+
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    const s = loadStoredSession();
-    return s ? s.user : null;
+    if (wasJustLoggedOut()) return null;
+    const s = getSession();
+    if (!s) return null;
+    const existing = initialUsers.find(
+      (u) => u.id === s.userId || u.udiseCode === s.udiseCode
+    );
+    return (
+      existing || {
+        id: s.userId,
+        udiseCode: s.udiseCode,
+        name: s.userName,
+        role: s.role,
+        passwordHash: '',
+        salt: '',
+        mustChangePassword: false,
+        failedAttempts: 0,
+        active: true,
+      }
+    );
   });
   const [users, setUsers] = useState<User[]>(() => initialUsers);
   const [authAuditLogs, setAuthAuditLogs] = useState<AuthAuditLog[]>([]);
@@ -557,10 +618,60 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [isForcedPasswordChange, setIsForcedPasswordChange] = useState(false);
 
+  // Subscribe to central session manager (including multi-tab logout and idle timeout)
+  useEffect(() => {
+    const unsubscribe = subscribeToSession((activeSession, reason) => {
+      if (!activeSession) {
+        setSession(null);
+        setCurrentUser(null);
+        setIsLogoutModalOpen(false);
+        cleanupUiOverlayAndUnlockScroll();
+        if (reason === 'tab_logout') {
+          addToast('Signed out from another browser tab.', 'info');
+        } else if (reason === 'expired') {
+          addToast('Session expired. Please log in again.', 'info');
+        }
+      } else {
+        const existing = users.find(
+          (u) => u.id === activeSession.userId || u.udiseCode === activeSession.udiseCode
+        );
+        const resolvedUser: User = existing || {
+          id: activeSession.userId,
+          udiseCode: activeSession.udiseCode,
+          name: activeSession.userName,
+          role: activeSession.role,
+          passwordHash: '',
+          salt: '',
+          mustChangePassword: false,
+          failedAttempts: 0,
+          active: true,
+        };
+        setCurrentUser(resolvedUser);
+        setSession({
+          userId: activeSession.userId,
+          user: resolvedUser,
+          token: activeSession.sessionId,
+          expiresAt: activeSession.expiresAt,
+          keepSignedIn: activeSession.remember,
+          lastActivityAt: new Date().toISOString(),
+        });
+      }
+    });
+
+    return unsubscribe;
+  }, [users]);
+
   // Core Data
   const [schoolInfo, setSchoolInfo] = useState<SchoolInfo>(defaultSchoolInfo);
   const [supportContact, setSupportContact] = useState<SupportContact>(defaultSupportContact);
   const [importantNotifications] = useState<string[]>(defaultNotifications);
+  const [schoolLogo, setSchoolLogo] = useState<SchoolLogoData | null>(() => {
+    try {
+      const stored = localStorage.getItem('gopinath_school_logo_data_v1');
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return null;
+  });
 
   const [classes, setClasses] = useState<ClassInfo[]>(initialClasses);
   const [examTypes, setExamTypes] = useState<ExamType[]>(initialExamTypes);
@@ -681,54 +792,18 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   }, [currentUser]);
 
-  // Route protection: redirect unauthenticated users to /login
+  // Route protection: redirect unauthenticated users to /login (excluding public tabs)
   useEffect(() => {
-    if (!currentUser && currentRoute.tab !== 'login' && currentRoute.tab !== 'forgot-password') {
+    const isPublic =
+      currentRoute.tab === 'login' ||
+      currentRoute.tab === 'forgot-password' ||
+      currentRoute.tab === 'bell-mode' ||
+      currentRoute.tab === 'diagnostics';
+
+    if (!currentUser && !isPublic) {
       navigateTo('/login');
     }
   }, [currentUser, currentRoute.tab]);
-
-  // Inactivity auto-logout: 30 minutes, warning at 29 minutes
-  useEffect(() => {
-    if (!currentUser) return;
-
-    let warningTimer: any = null;
-    let logoutTimer: any = null;
-
-    const resetTimers = () => {
-      if (warningTimer) clearTimeout(warningTimer);
-      if (logoutTimer) clearTimeout(logoutTimer);
-
-      warningTimer = setTimeout(() => {
-        addToast(
-          'You will be automatically logged out in 1 minute due to inactivity. Move mouse or press any key to stay signed in.',
-          'info',
-          undefined,
-          undefined,
-          12000
-        );
-      }, 29 * 60 * 1000);
-
-      logoutTimer = setTimeout(() => {
-        logout();
-        addToast('Session expired due to 30 minutes of inactivity. Please log in again.', 'info');
-      }, 30 * 60 * 1000);
-    };
-
-    const activityEvents = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
-    const handleActivity = () => {
-      resetTimers();
-    };
-
-    activityEvents.forEach((ev) => window.addEventListener(ev, handleActivity));
-    resetTimers();
-
-    return () => {
-      if (warningTimer) clearTimeout(warningTimer);
-      if (logoutTimer) clearTimeout(logoutTimer);
-      activityEvents.forEach((ev) => window.removeEventListener(ev, handleActivity));
-    };
-  }, [currentUser]);
 
   // Load from LocalStorage (with backwards compatibility migration)
   useEffect(() => {
@@ -899,6 +974,50 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setSupportContact((prev) => ({ ...prev, numbers }));
     addToast('Support numbers updated');
   };
+
+  const updateSchoolLogo = (logoUpdate: Partial<SchoolLogoData> | null) => {
+    if (logoUpdate === null) {
+      setSchoolLogo(null);
+      try {
+        localStorage.removeItem('gopinath_school_logo_data_v1');
+      } catch {}
+      updateResultSettings({ schoolLogo: undefined });
+      updateBrowserFaviconAndTitle(null, schoolInfo.name);
+    } else {
+      setSchoolLogo((prev) => {
+        const updated: SchoolLogoData = {
+          full: logoUpdate.full || prev?.full || '/school-logo.png',
+          medium: logoUpdate.medium || prev?.medium || '/icon-192.png',
+          icon: logoUpdate.icon || prev?.icon || '/icon-512.png',
+          updatedAt: new Date().toISOString(),
+          source: logoUpdate.source || prev?.source || 'upload',
+          ...logoUpdate,
+        };
+        try {
+          localStorage.setItem('gopinath_school_logo_data_v1', JSON.stringify(updated));
+        } catch {}
+        updateResultSettings({ schoolLogo: updated });
+        updateBrowserFaviconAndTitle(updated, schoolInfo.name);
+        updateDynamicManifest(updated, schoolInfo);
+        return updated;
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (!schoolLogo) {
+      loadDefaultSchoolLogoData().then((defaultLogo) => {
+        if (defaultLogo) {
+          setSchoolLogo(defaultLogo);
+          updateBrowserFaviconAndTitle(defaultLogo, schoolInfo.name);
+          updateDynamicManifest(defaultLogo, schoolInfo);
+        }
+      });
+    } else {
+      updateBrowserFaviconAndTitle(schoolLogo, schoolInfo.name);
+      updateDynamicManifest(schoolLogo, schoolInfo);
+    }
+  }, []);
 
   // Class Management
   const addClass = (name: string, hasStreams = false) => {
@@ -2069,18 +2188,27 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setUsers((prev) => prev.map((u) => (u.id === user.id ? updatedUser : u)));
     setCurrentUser(updatedUser);
 
-    const sessionDurationMs = keepSignedIn ? 7 * 24 * 3600 * 1000 : 8 * 3600 * 1000;
+    // Start central session
+    const v1Session = startSession(
+      {
+        id: updatedUser.id,
+        udiseCode: cleanCode,
+        role: updatedUser.role,
+        name: updatedUser.name,
+      },
+      keepSignedIn
+    );
+
     const newSession: AuthSession = {
       userId: updatedUser.id,
       user: updatedUser,
-      token: `token_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-      expiresAt: new Date(Date.now() + sessionDurationMs).toISOString(),
+      token: v1Session.sessionId,
+      expiresAt: v1Session.expiresAt,
       keepSignedIn,
       lastActivityAt: new Date().toISOString(),
     };
 
     setSession(newSession);
-    saveStoredSession(newSession);
 
     const logEntry: AuthAuditLog = {
       id: `log-${Date.now()}`,
@@ -2103,16 +2231,16 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         udiseCode: currentUser.udiseCode,
         userName: currentUser.name,
         timestamp: new Date().toISOString(),
+        details: 'User initiated logout',
       };
       setAuthAuditLogs((prev) => [logEntry, ...prev.slice(0, 99)]);
     }
 
-    clearStoredSession();
-    setSession(null);
-    setCurrentUser(null);
     setIsLogoutModalOpen(false);
-    navigateTo('/login');
-    addToast('You have been logged out successfully.', 'info');
+    performSafeLogout({
+      toastMessage: 'Logged out successfully',
+      addToast: (msg, type) => addToast(msg, type || 'success'),
+    });
   };
 
   const changePassword = async (
@@ -2412,6 +2540,8 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         deleteUser,
         schoolInfo,
         updateSchoolInfo,
+        schoolLogo,
+        updateSchoolLogo,
         supportContact,
         updateSupportNumbers,
         importantNotifications,

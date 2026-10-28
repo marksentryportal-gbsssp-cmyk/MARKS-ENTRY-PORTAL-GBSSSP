@@ -16,7 +16,10 @@ import { ForgotPasswordPage } from './components/auth/ForgotPasswordPage';
 import { ChangePasswordModal } from './components/auth/ChangePasswordModal';
 import { UserManagementTab } from './components/auth/UserManagementTab';
 import { LogoutModal } from './components/common/LogoutModal';
+import { InactivityModal } from './components/common/InactivityModal';
 import { SupportEditModal } from './components/common/SupportEditModal';
+import { BellModePage } from './components/pages/BellModePage';
+import { DiagnosticsPage } from './components/pages/DiagnosticsPage';
 
 const PortalRouter: React.FC = () => {
   const { currentRoute } = usePortal();
@@ -40,6 +43,7 @@ const PortalRouter: React.FC = () => {
       {currentRoute.tab === 'checklist' && <ChecklistPage />}
       {currentRoute.tab === 'final-submit' && <FinalSubmitPage />}
       {currentRoute.tab === 'users' && <UserManagementTab />}
+      {currentRoute.tab === 'diagnostics' && <DiagnosticsPage />}
     </main>
   );
 };
@@ -53,7 +57,17 @@ const PortalLayout: React.FC = () => {
     setIsChangePasswordOpen,
   } = usePortal();
 
-  // 1. Unauthenticated or public routes
+  // 1. Bell Mode: Public display mode that stays active regardless of auth status
+  if (currentRoute.tab === 'bell-mode') {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white font-sans antialiased">
+        <BellModePage />
+        <ToastContainer />
+      </div>
+    );
+  }
+
+  // 2. Forgot Password public page
   if (currentRoute.tab === 'forgot-password') {
     return (
       <div className="min-h-screen bg-[#f1f5f9] text-slate-800 font-sans antialiased">
@@ -64,6 +78,19 @@ const PortalLayout: React.FC = () => {
     );
   }
 
+  // 3. Diagnostics public troubleshooting page
+  if (currentRoute.tab === 'diagnostics') {
+    return (
+      <div className="min-h-screen bg-[#f1f5f9] text-slate-800 font-sans p-4 sm:p-6 antialiased">
+        <div className="max-w-4xl mx-auto">
+          <DiagnosticsPage />
+        </div>
+        <ToastContainer />
+      </div>
+    );
+  }
+
+  // 4. Unauthenticated access: route to LoginPage
   if (!currentUser || currentRoute.tab === 'login') {
     return (
       <div className="min-h-screen bg-[#f1f5f9] text-slate-800 font-sans antialiased">
@@ -74,7 +101,7 @@ const PortalLayout: React.FC = () => {
     );
   }
 
-  // 2. Authenticated layout
+  // 4. Authenticated main portal layout
   return (
     <div className="min-h-screen bg-[#f1f5f9] text-slate-800 font-sans flex flex-col antialiased">
       {/* Left Sidebar (Fixed 240px desktop, slide-out drawer on mobile) */}
@@ -96,6 +123,7 @@ const PortalLayout: React.FC = () => {
 
       {/* Modals & Overlays */}
       <LogoutModal />
+      <InactivityModal />
       <SupportEditModal />
       <ChangePasswordModal
         isOpen={isChangePasswordOpen}

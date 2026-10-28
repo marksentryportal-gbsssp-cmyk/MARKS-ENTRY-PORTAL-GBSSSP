@@ -26,6 +26,7 @@ interface DataTableProps<T> {
   defaultPageSize?: number;
   emptyMessage?: string;
   rowClassName?: (item: T) => string;
+  toolbarCenter?: React.ReactNode;
 }
 
 export function DataTable<T extends { id?: string | number }>({
@@ -36,6 +37,7 @@ export function DataTable<T extends { id?: string | number }>({
   defaultPageSize = 10,
   emptyMessage = 'No matching records found.',
   rowClassName,
+  toolbarCenter,
 }: DataTableProps<T>) {
   const [searchQuery, setSearchQuery] = useState('');
   const [pageSize, setPageSize] = useState<number>(defaultPageSize);
@@ -144,6 +146,12 @@ export function DataTable<T extends { id?: string | number }>({
           </select>
           <span>entries</span>
         </div>
+
+        {toolbarCenter && (
+          <div className="w-full sm:w-auto flex items-center justify-center">
+            {toolbarCenter}
+          </div>
+        )}
 
         <div className="flex items-center gap-2">
           <label htmlFor="datatable-search" className="font-semibold text-slate-700 whitespace-nowrap">

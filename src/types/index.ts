@@ -8,7 +8,8 @@ export type NavigationTab =
   | 'checklist'
   | 'final-submit'
   | 'users'
-  | 'bell-mode';
+  | 'bell-mode'
+  | 'diagnostics';
 
 export interface SchoolLogoData {
   full: string;       // base64 data URL up to 512x512
@@ -35,11 +36,18 @@ export interface RouteState {
   isSettings?: boolean;
 }
 
+export interface ClassSection {
+  id: string;        // e.g. "A", "B", "C"
+  name: string;      // e.g. "Section A"
+  classTeacherName?: string;
+}
+
 export interface ClassInfo {
   id: string;
   name: string;
   order: number;
   hasStreams: boolean;
+  sections?: ClassSection[];
 }
 
 export interface ExamType {
@@ -239,6 +247,8 @@ export interface ResultSettings {
   showTotalsInChecklist?: boolean;
   schoolLogo?: SchoolLogoData | null;
   logoPrintSettings?: LogoPrintSettings;
+  rankCalculationMode?: 'class_wise' | 'section_wise';
+  sectionsByClass?: Record<string, ClassSection[]>;
 }
 
 export interface SubjectResult {

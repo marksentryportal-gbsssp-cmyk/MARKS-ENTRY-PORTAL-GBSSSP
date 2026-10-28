@@ -278,9 +278,20 @@ export const StudentMarksheetView: React.FC<StudentMarksheetViewProps> = ({
         <div className="border-4 border-double border-teal-900/80 p-5 sm:p-7 rounded-sm relative">
           
           {/* Watermark Logo in background for print authenticity */}
-          <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] pointer-events-none select-none">
-            <Award className="w-96 h-96 text-teal-900" />
-          </div>
+          {(resultSettings.logoPrintSettings?.showWatermark !== false) && (
+            <div
+              style={{ opacity: resultSettings.logoPrintSettings?.watermarkOpacity || 0.07 }}
+              className="absolute inset-0 flex items-center justify-center pointer-events-none select-none overflow-hidden"
+            >
+              <SchoolLogo
+                size={260}
+                shape="none"
+                variant={resultSettings.logoPrintSettings?.bwPrintMode ? 'mono' : 'color'}
+                alt="School Watermark"
+                className="filter grayscale"
+              />
+            </div>
+          )}
 
           {/* Light-grey diagonal PROVISIONAL watermark when not final submitted */}
           {isProvisional && (
@@ -292,13 +303,31 @@ export const StudentMarksheetView: React.FC<StudentMarksheetViewProps> = ({
           )}
 
           {/* 1. Official Header */}
-          <div className="text-center pb-5 border-b-2 border-slate-800 relative">
-            <div className="flex items-center justify-between gap-4 mb-2">
-              <div className="w-16 h-16 sm:w-20 sm:h-20 shrink-0 flex items-center justify-center">
-                <SchoolLogo size="lg" editable={false} />
-              </div>
+          <div className="text-center pb-5 border-b-2 border-slate-800 relative z-1">
+            <div
+              className={`flex items-center gap-4 mb-2 ${
+                resultSettings.logoPrintSettings?.position === 'center'
+                  ? 'flex-col justify-center text-center'
+                  : 'justify-between text-left'
+              }`}
+            >
+              {resultSettings.logoPrintSettings?.showLogoInPrint !== false && (
+                <div className="w-16 h-16 sm:w-20 sm:h-20 shrink-0 flex items-center justify-center">
+                  <SchoolLogo
+                    size={
+                      resultSettings.logoPrintSettings?.size === 'small'
+                        ? 'md'
+                        : resultSettings.logoPrintSettings?.size === 'large'
+                        ? 'xl'
+                        : 'lg'
+                    }
+                    variant={resultSettings.logoPrintSettings?.bwPrintMode ? 'mono' : 'color'}
+                    editable={false}
+                  />
+                </div>
+              )}
 
-              <div className="flex-1">
+              <div className="flex-1 text-center">
                 <p className="text-xs sm:text-sm font-bold tracking-widest text-slate-700 uppercase">
                   {schoolInfo.boardName}
                 </p>
@@ -315,10 +344,12 @@ export const StudentMarksheetView: React.FC<StudentMarksheetViewProps> = ({
                 </div>
               </div>
 
-              <div className="w-16 h-16 sm:w-20 sm:h-20 shrink-0 flex flex-col items-center justify-center border border-slate-300 rounded bg-slate-50 text-[10px] text-slate-500 font-mono">
-                <ShieldCheck className="w-6 h-6 text-teal-700 mb-0.5" />
-                <span>OFFICIAL</span>
-              </div>
+              {resultSettings.logoPrintSettings?.position !== 'center' && (
+                <div className="w-16 h-16 sm:w-20 sm:h-20 shrink-0 flex flex-col items-center justify-center border border-slate-300 rounded bg-slate-50 text-[10px] text-slate-500 font-mono">
+                  <ShieldCheck className="w-6 h-6 text-teal-700 mb-0.5" />
+                  <span>OFFICIAL</span>
+                </div>
+              )}
             </div>
 
             <div className="mt-3 inline-block bg-teal-800 text-white font-black tracking-wider uppercase text-xs sm:text-sm py-1.5 px-6 rounded-xs shadow-xs">

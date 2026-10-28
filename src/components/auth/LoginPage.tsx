@@ -4,18 +4,20 @@ import {
   AlertCircle,
   Loader2,
   ShieldCheck,
+  AlertTriangle,
 } from 'lucide-react';
 import { usePortal } from '../../store/portalStore';
 import { NotificationBoard } from './NotificationBoard';
 import { PasswordInput } from './PasswordInput';
 import { sanitizeUdiseCode, isValidUdiseCode } from '../../utils/validators';
+import { SchoolLogo } from '../common/SchoolLogo';
+import { emergencySignOut, clearJustLoggedOutFlag } from '../../services/sessionService';
 
 export const LoginPage: React.FC = () => {
   const {
     schoolInfo,
     login,
     navigateTo,
-    defaultFirstTimePassword,
     setIsSupportModalOpen,
   } = usePortal();
 
@@ -69,7 +71,7 @@ export const LoginPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (lockoutSeconds > 0) return;
+    if (isLoading || lockoutSeconds > 0) return;
 
     if (!udiseCode.trim()) {
       setErrorMessage('Please enter your School UDISE Code.');
@@ -102,12 +104,34 @@ export const LoginPage: React.FC = () => {
         return;
       }
 
-      // Success! Navigate to dashboard
-      navigateTo('/dashboard');
+      // Success! Clear just logged out flag
+      clearJustLoggedOutFlag();
+
+      // Resolve redirect target from URL hash (e.g. #/login?redirect=checklist)
+      let targetPath = '/dashboard';
+      const hash = window.location.hash;
+      if (hash.includes('?')) {
+        const queryStr = hash.split('?')[1];
+        const searchParams = new URLSearchParams(queryStr);
+        const red = searchParams.get('redirect');
+        if (red) {
+          targetPath = red.startsWith('/') ? red : `/${red}`;
+        }
+      }
+
+      // Replace window location to prevent back-button loops
+      window.location.replace(`/#${targetPath.replace(/^#\/?/, '')}`);
     } catch (err: any) {
       setIsLoading(false);
       setErrorMessage('An unexpected error occurred during login. Please try again.');
     }
+  };
+
+  const handleEmergencySignOut = () => {
+    emergencySignOut();
+    setErrorMessage(null);
+    setPassword('');
+    window.location.reload();
   };
 
   return (
@@ -117,17 +141,7 @@ export const LoginPage: React.FC = () => {
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3 text-center md:text-left">
           {/* Left: School Logo Badge & Text */}
           <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-slate-900 border-2 border-teal-600 flex items-center justify-center text-teal-400 shrink-0 shadow-xs">
-              {schoolInfo.logoUrl ? (
-                <img
-                  src={schoolInfo.logoUrl}
-                  alt="School Logo"
-                  className="w-full h-full rounded-full object-cover"
-                />
-              ) : (
-                <ShieldCheck className="w-7 h-7" />
-              )}
-            </div>
+            <SchoolLogo size="md" shape="circle" alt="School Logo" />
 
             <div className="space-y-0.5">
               <h1 className="text-base sm:text-lg md:text-xl font-black text-slate-900 tracking-tight uppercase">
@@ -142,8 +156,17 @@ export const LoginPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Right: Rounded "Contact us" badge */}
+          {/* Right: Technical Support & Bell Mode Link */}
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => navigateTo('/bell-mode')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-900 text-teal-400 hover:text-white border border-slate-800 text-xs font-semibold transition-colors cursor-pointer"
+              title="Open Public Bell Mode Display"
+            >
+              <span>🔔 Bell Mode</span>
+            </button>
+
             <button
               type="button"
               onClick={() => setIsSupportModalOpen(true)}
@@ -179,9 +202,14 @@ export const LoginPage: React.FC = () => {
 
             {/* RIGHT half: School Login Form (Desktop Right, Mobile Top) */}
             <div className="w-full md:w-1/2 p-6 sm:p-10 order-1 md:order-2 flex flex-col justify-center">
-              <div className="space-y-6 max-w-sm mx-auto w-full">
+              <div className="space-y-5 max-w-sm mx-auto w-full">
+                {/* Logo above the form card */}
+                <div className="flex justify-center">
+                  <SchoolLogo size={72} shape="none" alt="School Seal" />
+                </div>
+
                 {/* Title */}
-                <div className="text-center space-y-2">
+                <div className="text-center space-y-1">
                   <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
                     School Login
                   </h2>
@@ -238,14 +266,14 @@ export const LoginPage: React.FC = () => {
                         placeholder="Enter School UDISE Code"
                         className={`w-full pl-10 pr-3 py-2.5 text-sm font-mono text-slate-800 placeholder-slate-400 rounded-md border-b-2 bg-slate-50/70 hover:bg-slate-50 focus:bg-white border-t border-l border-r border-slate-200 transition-all focus:outline-hidden ${
                           udiseError
-                            ? 'border-b-red-500 focus:border-red-600'
-                            : 'border-b-slate-300 focus:border-purple-600'
+                            ? 'border-b-red-500 bg-red-50/30'
+                            : 'border-b-purple-600 focus:border-b-purple-700'
                         }`}
                         required
                       />
                     </div>
                     {udiseError && (
-                      <p className="text-[11px] text-red-600 font-medium px-1">
+                      <p className="text-[11px] text-red-600 font-medium mt-1">
                         {udiseError}
                       </p>
                     )}
@@ -315,7 +343,7 @@ export const LoginPage: React.FC = () => {
                   </div>
 
                   {/* School Credentials Notice with 1-click Auto-fill */}
-                  <div className="pt-3 text-center space-y-2">
+                  <div className="pt-2 text-center space-y-2">
                     <p className="text-[11px] font-semibold text-[#0f766e] bg-teal-50/90 border border-teal-200/80 rounded px-2.5 py-1.5 leading-snug">
                       School UDISE: <strong className="font-mono text-slate-800">18020200403</strong> &bull; Password: <strong className="font-mono text-slate-800">Gopinath2024@</strong>
                     </p>
@@ -332,6 +360,18 @@ export const LoginPage: React.FC = () => {
                       Click here to auto-fill School Login credentials
                     </button>
                   </div>
+
+                  {/* Emergency Sign Out Option */}
+                  <div className="pt-3 text-center border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={handleEmergencySignOut}
+                      className="text-[10px] text-slate-400 hover:text-rose-600 underline transition-colors cursor-pointer"
+                      title="Clear session keys and reset state"
+                    >
+                      Trouble signing in? Emergency Sign Out (Reset Session)
+                    </button>
+                  </div>
                 </form>
               </div>
             </div>
@@ -340,8 +380,16 @@ export const LoginPage: React.FC = () => {
       </main>
 
       {/* 4. Simple clean footer copyright */}
-      <footer className="text-center py-3 text-xs text-slate-500">
-        Internal Examination Marks Entry Portal &bull; Government of Assam
+      <footer className="text-center py-3 text-xs text-slate-500 flex items-center justify-center gap-3">
+        <span>Internal Examination Marks Entry Portal &bull; Government of Assam</span>
+        <span>&bull;</span>
+        <button
+          type="button"
+          onClick={() => navigateTo('/diagnostics')}
+          className="text-slate-400 hover:text-teal-700 underline text-[11px]"
+        >
+          Diagnostics
+        </button>
       </footer>
     </div>
   );

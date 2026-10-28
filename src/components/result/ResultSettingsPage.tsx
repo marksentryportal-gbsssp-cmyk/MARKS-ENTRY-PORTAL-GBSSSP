@@ -21,11 +21,13 @@ import {
   ArrowUp,
   ArrowDown,
   Copy,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { usePortal } from '../../store/portalStore';
 import { Subject, GradeScaleItem, ExamGroup, SubjectExamComponentConfig } from '../../types';
 import { defaultExamGroups } from '../../data/seedResultData';
 import { calculateGrade } from '../../utils/resultCalculator';
+import { SchoolLogoSettingsCard } from '../common/SchoolLogoSettingsCard';
 
 export const ResultSettingsPage: React.FC = () => {
   const {
@@ -42,7 +44,7 @@ export const ResultSettingsPage: React.FC = () => {
     addToast,
   } = usePortal();
 
-  const [activeTab, setActiveTab] = useState<'weightage' | 'subjects' | 'grades' | 'policy'>('weightage');
+  const [activeTab, setActiveTab] = useState<'weightage' | 'subjects' | 'grades' | 'policy' | 'logo'>('weightage');
 
   // Local state for exam groups
   const [localGroups, setLocalGroups] = useState<ExamGroup[]>(() => {
@@ -493,6 +495,19 @@ export const ResultSettingsPage: React.FC = () => {
           >
             <FileText className="w-4 h-4" />
             4. Marksheet & Pass Policy
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('logo')}
+            className={`px-4 py-2.5 text-xs font-bold border-b-2 flex items-center gap-2 transition-colors cursor-pointer whitespace-nowrap ${
+              activeTab === 'logo'
+                ? 'border-teal-700 text-teal-800'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <ImageIcon className="w-4 h-4" />
+            5. School Logo & Header
           </button>
         </div>
       </div>
@@ -1256,6 +1271,11 @@ export const ResultSettingsPage: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Tab 5: School Logo & Document Header */}
+      {activeTab === 'logo' && (
+        <SchoolLogoSettingsCard />
       )}
 
       {/* Modal: Create or Edit Exam Group */}

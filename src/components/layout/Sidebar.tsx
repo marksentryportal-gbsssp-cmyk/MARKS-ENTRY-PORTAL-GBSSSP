@@ -102,7 +102,13 @@ export const Sidebar: React.FC = () => {
 
         {/* Circular School Logo Placeholder (Centered) */}
         <div className="pt-6 pb-4 px-4 flex flex-col items-center text-center border-b border-slate-700/60">
-          <SchoolLogo size="md" editable={true} />
+          <SchoolLogo
+            size="md"
+            shape="circle"
+            darkBackground={true}
+            editable={currentUser?.role === 'admin'}
+            onEditClick={() => navigateTo('/result/settings')}
+          />
           <h2 className="mt-3 text-xs font-semibold tracking-wide text-slate-200 uppercase line-clamp-1">
             Gopinath Bordoloi
           </h2>

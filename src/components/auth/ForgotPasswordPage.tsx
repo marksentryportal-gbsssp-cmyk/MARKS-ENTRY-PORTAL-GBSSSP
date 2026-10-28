@@ -15,6 +15,7 @@ import {
 } from '../../services/otpService';
 import { isValidPassword } from '../../services/authService';
 import { sanitizeUdiseCode, isValidUdiseCode } from '../../utils/validators';
+import { SchoolLogo } from '../common/SchoolLogo';
 
 export const ForgotPasswordPage: React.FC = () => {
   const {
@@ -196,17 +197,7 @@ export const ForgotPasswordPage: React.FC = () => {
       <div className="w-full max-w-[420px] bg-white rounded-2xl shadow-xl border border-blue-100 p-8 space-y-6">
         {/* Top: School Logo centered */}
         <div className="flex flex-col items-center text-center space-y-2">
-          <div className="w-16 h-16 rounded-full bg-slate-900 border-2 border-blue-600 flex items-center justify-center text-blue-400 shadow-md">
-            {schoolInfo.logoUrl ? (
-              <img
-                src={schoolInfo.logoUrl}
-                alt="School Logo"
-                className="w-full h-full rounded-full object-cover"
-              />
-            ) : (
-              <ShieldCheck className="w-9 h-9" />
-            )}
-          </div>
+          <SchoolLogo size={64} shape="circle" alt="School Logo" />
 
           {/* Title in bold royal blue (#0b57d0) with horizontal lines on both sides */}
           <div className="w-full flex items-center gap-3 pt-2">

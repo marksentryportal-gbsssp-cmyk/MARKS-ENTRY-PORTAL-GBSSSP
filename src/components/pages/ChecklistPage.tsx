@@ -36,6 +36,7 @@ import {
   StudentChecklistRow,
 } from '../../utils/checklistUtils';
 import { SchoolLogo } from '../common/SchoolLogo';
+import { DocumentHeader } from '../common/DocumentHeader';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 
@@ -1038,55 +1039,13 @@ const ExamChecklistView: React.FC<ExamChecklistViewProps> = ({ examId }) => {
         className="print-area bg-white rounded-lg border border-slate-200 shadow-sm p-4 sm:p-6 print:p-0 print:border-none print:shadow-none max-w-full text-slate-900 font-sans"
       >
         {/* Printable Official Document Header */}
-        <div className="pb-4 mb-4 border-b-2 border-slate-800 text-center relative">
-          {/* Watermark for draft verification */}
-          {!isFinalSubmitted && (
-            <div className="bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-bold py-1 px-3 mb-2 rounded text-center tracking-wider uppercase">
-              *** DRAFT CHECKLIST - FOR SCRUTINY & VERIFICATION ONLY - NOT FINAL SUBMITTED ***
-            </div>
-          )}
-
-          <div className="flex items-center justify-between gap-4">
-            <div className="w-14 h-14 sm:w-16 sm:h-16 shrink-0 flex items-center justify-center">
-              <SchoolLogo size="sm" editable={false} />
-            </div>
-
-            <div className="flex-1 text-center">
-              <p className="text-[11px] sm:text-xs font-bold text-slate-600 tracking-wider uppercase">
-                {schoolInfo.boardName}
-              </p>
-              <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight uppercase leading-snug">
-                {schoolInfo.name}
-              </h2>
-              <p className="text-[10px] sm:text-[11px] font-medium text-slate-600">
-                P.O. PAGLAHAT, DIST: DHUBRI (ASSAM) - PIN: 783334
-              </p>
-              <div className="mt-1 flex items-center justify-center gap-3 text-[10px] font-mono font-bold text-slate-700">
-                <span>ASSEB CODE: {schoolInfo.code}</span>
-                <span>•</span>
-                <span>UDISE CODE: {schoolInfo.udiseCode}</span>
-                <span>•</span>
-                <span>SESSION: {exam.academicYear}</span>
-              </div>
-            </div>
-
-            <div className="w-14 sm:w-16 shrink-0 text-right text-[10px] font-mono text-slate-500">
-              <div>Date: {new Date().toLocaleDateString('en-GB')}</div>
-              <div className="mt-1 text-[9px] font-bold text-teal-800 border border-teal-700/50 px-1 py-0.5 rounded text-center">
-                CHECKLIST
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-2.5 pt-2 border-t border-slate-300 flex items-center justify-between text-xs">
-            <div className="font-bold text-[#0f766e]">
-              EXAMINATION: {exam.name.toUpperCase()} (CLASS {exam.className.toUpperCase()})
-            </div>
-            <div className="text-[11px] text-slate-600 font-mono">
-              Dates: {exam.startDate} to {exam.endDate} • Total Candidates: {checklistData.stats.totalEnrolled}
-            </div>
-          </div>
-        </div>
+        <DocumentHeader
+          title={`EXAMINATION: ${exam.name.toUpperCase()} (CLASS ${exam.className.toUpperCase()})`}
+          subtitle={`Dates: ${exam.startDate} to ${exam.endDate} • Total Candidates: ${checklistData.stats.totalEnrolled}`}
+          documentNo="CHECKLIST"
+          isDraft={!isFinalSubmitted}
+          draftText="*** DRAFT CHECKLIST - FOR SCRUTINY & VERIFICATION ONLY - NOT FINAL SUBMITTED ***"
+        />
 
         {/* 4. MAIN CHECKLIST CONTENT */}
         {studentsToRender.length === 0 ? (

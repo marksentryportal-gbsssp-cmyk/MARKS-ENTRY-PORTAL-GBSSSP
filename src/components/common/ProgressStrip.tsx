@@ -6,6 +6,7 @@ interface ProgressStripProps {
   totalCount: number;
   onBack: () => void;
   backText?: string;
+  breakdownText?: string;
 }
 
 export const ProgressStrip: React.FC<ProgressStripProps> = ({
@@ -13,6 +14,7 @@ export const ProgressStrip: React.FC<ProgressStripProps> = ({
   totalCount,
   onBack,
   backText = 'Back to exam list',
+  breakdownText,
 }) => {
   const percentage = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
@@ -50,6 +52,13 @@ export const ProgressStrip: React.FC<ProgressStripProps> = ({
             style={{ width: `${percentage}%` }}
           />
         </div>
+
+        {breakdownText && (
+          <div className="text-[11px] font-mono font-medium text-slate-500 flex items-center justify-between w-full pt-0.5">
+            <span className="text-slate-400">Section Breakdown:</span>
+            <span className="text-slate-700 font-semibold">{breakdownText}</span>
+          </div>
+        )}
       </div>
     </div>
   );

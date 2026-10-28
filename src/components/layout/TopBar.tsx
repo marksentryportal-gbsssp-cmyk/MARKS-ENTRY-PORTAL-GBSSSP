@@ -8,8 +8,10 @@ import {
   KeyRound,
   Users,
   ShieldAlert,
+  Activity,
 } from 'lucide-react';
 import { usePortal } from '../../store/portalStore';
+import { SchoolLogo } from '../common/SchoolLogo';
 
 export const TopBar: React.FC = () => {
   const {
@@ -49,10 +51,8 @@ export const TopBar: React.FC = () => {
         </button>
 
         <div className="flex items-center gap-2">
-          {/* Government seal emblem icon */}
-          <div className="hidden sm:flex w-7 h-7 rounded-full bg-slate-100 border border-slate-300 items-center justify-center text-teal-800">
-            <ShieldCheck className="w-4 h-4" />
-          </div>
+          {/* Central School Logo emblem icon */}
+          <SchoolLogo size={28} shape="circle" className="hidden sm:inline-flex shrink-0" />
           <span className="font-bold text-slate-800 text-sm md:text-base tracking-tight select-none">
             {schoolInfo.boardName?.includes('ANKUR TO XII')
               ? schoolInfo.boardName
@@ -108,17 +108,20 @@ export const TopBar: React.FC = () => {
             {/* Dropdown Menu */}
             {isDropdownOpen && (
               <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100">
-                {/* User info banner inside dropdown */}
-                <div className="px-4 py-2.5 border-b border-slate-100 bg-slate-50/70">
-                  <p className="text-xs font-bold text-slate-900 truncate">
-                    {currentUser.name}
-                  </p>
-                  <p className="text-[11px] font-mono text-teal-700 font-semibold mt-0.5">
-                    UDISE: {schoolInfo.udiseCode || currentUser.udiseCode}
-                  </p>
-                  <span className="inline-block mt-1.5 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-teal-100 text-teal-900">
-                    Role: {currentUser.role}
-                  </span>
+                {/* User info banner inside dropdown with SchoolLogo */}
+                <div className="px-4 py-2.5 border-b border-slate-100 bg-slate-50/70 flex items-center gap-3">
+                  <SchoolLogo size={36} shape="circle" className="shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-bold text-slate-900 truncate">
+                      {currentUser.name}
+                    </p>
+                    <p className="text-[11px] font-mono text-teal-700 font-semibold truncate">
+                      UDISE: {schoolInfo.udiseCode || currentUser.udiseCode}
+                    </p>
+                    <span className="inline-block mt-0.5 px-2 py-0.2 rounded text-[10px] font-bold uppercase tracking-wider bg-teal-100 text-teal-900">
+                      Role: {currentUser.role}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Menu items */}
@@ -133,6 +136,18 @@ export const TopBar: React.FC = () => {
                   >
                     <KeyRound className="w-4 h-4 text-slate-500" />
                     <span>Change Password</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsDropdownOpen(false);
+                      navigateTo('/diagnostics');
+                    }}
+                    className="w-full flex items-center gap-2.5 px-4 py-2 text-xs text-slate-700 hover:text-slate-900 hover:bg-slate-100 transition-colors text-left cursor-pointer"
+                  >
+                    <Activity className="w-4 h-4 text-teal-600" />
+                    <span>Session Diagnostics</span>
                   </button>
 
                   {currentUser.role === 'admin' && (
