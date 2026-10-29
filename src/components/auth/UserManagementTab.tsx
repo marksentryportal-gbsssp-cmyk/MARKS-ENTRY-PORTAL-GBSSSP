@@ -44,12 +44,12 @@ export const UserManagementTab: React.FC = () => {
   const [userName, setUserName] = useState('');
   const [userCode, setUserCode] = useState('');
   const [userRole, setUserRole] = useState<UserRole>('teacher');
-  const [tempPassword, setTempPassword] = useState('123456');
+  const [tempPassword, setTempPassword] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
   // Reset password modal state
   const [resetModalUser, setResetModalUser] = useState<User | null>(null);
-  const [resetTempPassword, setResetTempPassword] = useState('123456');
+  const [resetTempPassword, setResetTempPassword] = useState('');
 
   // Handle Create User
   const handleCreateOrUpdateUser = async (e: React.FormEvent) => {
@@ -80,6 +80,10 @@ export const UserManagementTab: React.FC = () => {
       setEditingUser(null);
       setIsAddUserModalOpen(false);
     } else {
+      if (!tempPassword || tempPassword.length < 8) {
+        setFormError('Temporary password must be at least 8 characters.');
+        return;
+      }
       // Check duplicate code
       const existing = users.find(
         (u) => (u.udiseCode || u.institutionCode || '').toUpperCase() === cleanCode.toUpperCase()
@@ -97,7 +101,7 @@ export const UserManagementTab: React.FC = () => {
           mustChangePassword: true,
           active: true,
         },
-        tempPassword || '123456'
+        tempPassword
       );
 
       addToast(`User ${userName} created with temporary password.`, 'success');
@@ -107,7 +111,7 @@ export const UserManagementTab: React.FC = () => {
     setUserName('');
     setUserCode('');
     setUserRole('teacher');
-    setTempPassword('123456');
+    setTempPassword('');
   };
 
   // Open Edit User
@@ -123,9 +127,13 @@ export const UserManagementTab: React.FC = () => {
   // Handle Reset Password confirmation
   const handleConfirmResetPassword = async () => {
     if (!resetModalUser) return;
+    if (!resetTempPassword || resetTempPassword.length < 8) {
+      addToast('Temporary password must be at least 8 characters.', 'error');
+      return;
+    }
     await resetUserPassword(resetModalUser.id, resetTempPassword);
     addToast(
-      `Password for ${resetModalUser.name} reset to "${resetTempPassword}". User must change it on next login.`,
+      `Password for ${resetModalUser.name} reset. User must change it on next login.`,
       'success'
     );
     setResetModalUser(null);
@@ -240,7 +248,7 @@ export const UserManagementTab: React.FC = () => {
               setUserName('');
               setUserCode('');
               setUserRole('teacher');
-              setTempPassword('123456');
+              setTempPassword('');
               setFormError(null);
               setIsAddUserModalOpen(true);
             }}
@@ -327,7 +335,7 @@ export const UserManagementTab: React.FC = () => {
                           type="button"
                           onClick={() => {
                             setResetModalUser(u);
-                            setResetTempPassword('123456');
+                            setResetTempPassword('');
                           }}
                           className="p-1 rounded text-slate-500 hover:text-purple-700 hover:bg-purple-50 transition-colors"
                           title="Reset user password"
@@ -513,7 +521,7 @@ export const UserManagementTab: React.FC = () => {
                     type="text"
                     value={tempPassword}
                     onChange={(e) => setTempPassword(e.target.value)}
-                    placeholder="123456"
+                    placeholder="Enter initial password (min. 8 characters)"
                     className="w-full px-3 py-2 rounded border border-slate-300 text-xs font-mono focus:border-purple-600 focus:outline-hidden"
                   />
                   <p className="text-[11px] text-slate-500">

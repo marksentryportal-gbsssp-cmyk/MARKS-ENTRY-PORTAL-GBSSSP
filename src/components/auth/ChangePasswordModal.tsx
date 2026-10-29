@@ -42,8 +42,8 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
       return;
     }
 
-    if (newPassword === '123456') {
-      setError('New password cannot be the default password (123456).');
+    if (newPassword.toLowerCase().includes('password')) {
+      setError('New password cannot contain the word "password".');
       return;
     }
 

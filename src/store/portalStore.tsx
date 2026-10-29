@@ -34,10 +34,7 @@ import {
   hashPassword,
   verifyPassword,
   generateSalt,
-  DEFAULT_ADMIN_HASH,
-  DEFAULT_ADMIN_SALT,
   DEFAULT_ADMIN_UDISE,
-  DEFAULT_ADMIN_PASSWORD,
   loadStoredSession,
   saveStoredSession,
   clearStoredSession,
@@ -63,6 +60,18 @@ import {
   updateBrowserFaviconAndTitle,
   updateDynamicManifest,
 } from '../utils/logoUtils';
+import { isFirebaseConfigured, getFirebaseAuth } from '../services/firebase';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import {
+  firebaseSignIn,
+  firebaseSignOut,
+  saveStudentToFirestore,
+  deleteStudentFromFirestore,
+  saveMarkToFirestore,
+  batchSaveMarksToFirestore,
+  saveExamToFirestore,
+  saveChecklistToFirestore,
+} from '../services/firestoreService';
 
 interface PortalContextType {
   // Routing
@@ -79,6 +88,9 @@ interface PortalContextType {
   setIsSupportEditOpen: (open: boolean) => void;
   isSupportModalOpen: boolean;
   setIsSupportModalOpen: (open: boolean) => void;
+  isFirebaseModalOpen: boolean;
+  setIsFirebaseModalOpen: (open: boolean) => void;
+  isFirebaseConnected: boolean;
 
   // Authentication & Users (Step 5 & 6)
   currentUser: User | null;
@@ -265,8 +277,8 @@ const defaultAdminUser: User = {
   udiseCode: DEFAULT_ADMIN_UDISE,
   name: 'School Examination Incharge',
   role: 'admin',
-  passwordHash: DEFAULT_ADMIN_HASH,
-  salt: DEFAULT_ADMIN_SALT,
+  passwordHash: '',
+  salt: '',
   mustChangePassword: false,
   failedAttempts: 0,
   active: true,
@@ -277,8 +289,8 @@ const defaultTeacherUser: User = {
   udiseCode: '18020200401',
   name: 'Senior Teacher (Marks Entry)',
   role: 'teacher',
-  passwordHash: DEFAULT_ADMIN_HASH,
-  salt: DEFAULT_ADMIN_SALT,
+  passwordHash: '',
+  salt: '',
   mustChangePassword: false,
   failedAttempts: 0,
   active: true,
@@ -564,6 +576,8 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const [isSupportEditOpen, setIsSupportEditOpen] = useState(false);
   const [isSupportModalOpen, setIsSupportModalOpen] = useState(false);
+  const [isFirebaseModalOpen, setIsFirebaseModalOpen] = useState(false);
+  const [isFirebaseConnected, setIsFirebaseConnected] = useState(() => isFirebaseConfigured());
 
   // Authentication & Session (controlled by sessionService single source of truth)
   const [session, setSession] = useState<AuthSession | null>(() => {
@@ -614,7 +628,7 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [users, setUsers] = useState<User[]>(() => initialUsers);
   const [authAuditLogs, setAuthAuditLogs] = useState<AuthAuditLog[]>([]);
   const [otpDeliveryMode, setOtpDeliveryMode] = useState<'demo' | 'live'>('demo');
-  const [defaultFirstTimePassword, setDefaultFirstTimePassword] = useState('Gopinath2024@');
+  const [defaultFirstTimePassword, setDefaultFirstTimePassword] = useState('');
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [isForcedPasswordChange, setIsForcedPasswordChange] = useState(false);
 
@@ -858,8 +872,8 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
               return {
                 ...u,
                 udiseCode: DEFAULT_ADMIN_UDISE,
-                passwordHash: DEFAULT_ADMIN_HASH,
-                salt: DEFAULT_ADMIN_SALT,
+                passwordHash: '',
+                salt: '',
                 mustChangePassword: false,
               };
             }
@@ -1280,17 +1294,22 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       return { success: false, error: 'Only administrators are authorized to cancel final submission.' };
     }
 
-    // Verify password against current logged in user or default admin credentials
+    // Verify password securely against Firebase Auth session
     let passwordValid = false;
-    if (currentUser) {
+    const auth = getFirebaseAuth();
+    if (auth && auth.currentUser && auth.currentUser.email) {
+      try {
+        await signInWithEmailAndPassword(auth, auth.currentUser.email, password);
+        passwordValid = true;
+      } catch {
+        passwordValid = false;
+      }
+    } else if (currentUser && currentUser.passwordHash && currentUser.salt) {
       passwordValid = await verifyPassword(password, currentUser.passwordHash, currentUser.salt);
-    }
-    if (!passwordValid && password === DEFAULT_ADMIN_PASSWORD) {
-      passwordValid = true;
     }
 
     if (!passwordValid) {
-      return { success: false, error: 'Incorrect login password. Please re-enter your password.' };
+      return { success: false, error: 'Incorrect login password. Please re-enter your registered password.' };
     }
 
     const cancelledBy =
@@ -2088,142 +2107,122 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   // Authentication & User Management (Step 5 & 6)
   // ----------------------------------------------------------------
   const login = async (
-    udiseCode: string,
+    emailOrUdise: string,
     passwordInput: string,
     keepSignedIn = false
   ): Promise<{ success: boolean; error?: string; lockedSeconds?: number }> => {
-    const cleanCode = udiseCode.trim().toUpperCase();
-    let user = users.find(
-      (u) => (u.udiseCode || u.institutionCode || '').toUpperCase() === cleanCode
-    );
-
-    // Fallback if matching the school UDISE code or legacy code
-    if (!user && (cleanCode === '18020200403' || cleanCode === '18000000000')) {
-      user = users.find((u) => u.role === 'admin') || defaultAdminUser;
+    const identifier = emailOrUdise.trim();
+    if (!identifier || !passwordInput) {
+      return { success: false, error: 'Please enter your registered email and password.' };
     }
 
-    if (!user) {
-      const logEntry: AuthAuditLog = {
-        id: `log-${Date.now()}`,
-        type: 'login_failure',
-        udiseCode: cleanCode,
-        timestamp: new Date().toISOString(),
-        details: 'Invalid School UDISE Code',
-      };
-      setAuthAuditLogs((prev) => [logEntry, ...prev.slice(0, 99)]);
-      return { success: false, error: 'Invalid School UDISE Code or password' };
-    }
-
-    if (!user.active) {
-      return { success: false, error: 'This user account is inactive. Please contact the administrator.' };
-    }
-
-    // Check account lockout
-    if (user.lockedUntil) {
-      const lockTime = new Date(user.lockedUntil).getTime();
-      const now = Date.now();
-      if (now < lockTime) {
-        const remainingSeconds = Math.ceil((lockTime - now) / 1000);
-        return {
-          success: false,
-          error: `Account is temporarily locked. Try again in ${remainingSeconds}s.`,
-          lockedSeconds: remainingSeconds,
+    try {
+      const fbRes = await firebaseSignIn(identifier, passwordInput);
+      if (!fbRes.success) {
+        const logEntry: AuthAuditLog = {
+          id: `log-${Date.now()}`,
+          type: 'login_failure',
+          udiseCode: identifier,
+          timestamp: new Date().toISOString(),
+          details: fbRes.error || 'Authentication failed',
         };
-      }
-    }
-
-    const isValid =
-      (passwordInput === 'Gopinath2024@' && (cleanCode === '18020200403' || cleanCode === '18000000000' || user.role === 'admin')) ||
-      (await verifyPassword(passwordInput, user.passwordHash, user.salt));
-    if (!isValid) {
-      const newAttempts = (user.failedAttempts || 0) + 1;
-      let lockedUntil: string | null = null;
-      let lockedSeconds: number | undefined = undefined;
-
-      if (newAttempts >= 5) {
-        // Lock for 60 seconds
-        lockedSeconds = 60;
-        lockedUntil = new Date(Date.now() + 60 * 1000).toISOString();
+        setAuthAuditLogs((prev) => [logEntry, ...prev.slice(0, 99)]);
+        return { success: false, error: fbRes.error || 'Invalid registered email or password.' };
       }
 
-      const updatedUser: User = {
-        ...user,
-        failedAttempts: newAttempts,
-        lockedUntil,
-      };
-
-      setUsers((prev) => prev.map((u) => (u.id === user.id ? updatedUser : u)));
-
-      const logEntry: AuthAuditLog = {
-        id: `log-${Date.now()}`,
-        type: 'login_failure',
-        udiseCode: cleanCode,
-        userName: user.name,
-        timestamp: new Date().toISOString(),
-        details: lockedUntil ? 'Account locked after 5 failed attempts' : `Failed attempt #${newAttempts}`,
-      };
-      setAuthAuditLogs((prev) => [logEntry, ...prev.slice(0, 99)]);
-
-      if (lockedUntil) {
+      if (!fbRes.user) {
         return {
           success: false,
-          error: `Account locked due to 5 consecutive failed attempts. Try again in 60s.`,
-          lockedSeconds: 60,
+          error: 'Authorized user profile document not found in Firestore. Access denied.',
         };
       }
 
+      const fbUser = fbRes.user;
+      if (fbUser.active === false) {
+        await firebaseSignOut();
+        return {
+          success: false,
+          error: 'Your account has been deactivated. Please contact the administrator.',
+        };
+      }
+
+      setIsFirebaseConnected(true);
+      const mappedRole: UserRole =
+        fbUser.role === 'super_admin' || fbUser.role === 'admin'
+          ? 'admin'
+          : (fbUser.role as UserRole);
+
+      const mappedUser: User = {
+        id: fbRes.firebaseUid || fbUser.uid,
+        udiseCode: fbUser.udiseCode || '18020200403',
+        name: fbUser.name || (fbUser.role === 'super_admin' ? 'Super Administrator' : 'Authorized User'),
+        role: mappedRole,
+        mustChangePassword: false,
+        failedAttempts: 0,
+        lockedUntil: null,
+        lastLoginAt: new Date().toISOString(),
+        active: true,
+        passwordHash: '',
+        salt: '',
+      };
+
+      setUsers((prev) => {
+        const idx = prev.findIndex(
+          (u) => u.id === mappedUser.id || u.udiseCode === mappedUser.udiseCode
+        );
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = { ...updated[idx], ...mappedUser };
+          return updated;
+        }
+        return [mappedUser, ...prev];
+      });
+
+      setCurrentUser(mappedUser);
+
+      const v1Session = startSession(
+        {
+          id: mappedUser.id,
+          udiseCode: mappedUser.udiseCode,
+          role: mappedUser.role,
+          name: mappedUser.name,
+        },
+        keepSignedIn
+      );
+
+      const newSession: AuthSession = {
+        userId: mappedUser.id,
+        user: mappedUser,
+        token: v1Session.sessionId,
+        expiresAt: v1Session.expiresAt,
+        keepSignedIn,
+        lastActivityAt: new Date().toISOString(),
+      };
+
+      setSession(newSession);
+
+      const logEntry: AuthAuditLog = {
+        id: `log-${Date.now()}`,
+        type: 'login_success',
+        udiseCode: mappedUser.udiseCode,
+        userName: mappedUser.name,
+        timestamp: new Date().toISOString(),
+        details: `Signed in via Firebase Authentication (${fbUser.role})`,
+      };
+      setAuthAuditLogs((prev) => [logEntry, ...prev.slice(0, 99)]);
+
+      return { success: true };
+    } catch (err: any) {
+      console.error('Firebase Login Error:', err);
       return {
         success: false,
-        error: `Invalid School UDISE Code or password. (${5 - newAttempts} attempt(s) remaining)`,
+        error: err?.message || 'Authentication failed. Please check your credentials.',
       };
     }
-
-    // Successful login!
-    const updatedUser: User = {
-      ...user,
-      failedAttempts: 0,
-      lockedUntil: null,
-      lastLoginAt: new Date().toISOString(),
-    };
-    setUsers((prev) => prev.map((u) => (u.id === user.id ? updatedUser : u)));
-    setCurrentUser(updatedUser);
-
-    // Start central session
-    const v1Session = startSession(
-      {
-        id: updatedUser.id,
-        udiseCode: cleanCode,
-        role: updatedUser.role,
-        name: updatedUser.name,
-      },
-      keepSignedIn
-    );
-
-    const newSession: AuthSession = {
-      userId: updatedUser.id,
-      user: updatedUser,
-      token: v1Session.sessionId,
-      expiresAt: v1Session.expiresAt,
-      keepSignedIn,
-      lastActivityAt: new Date().toISOString(),
-    };
-
-    setSession(newSession);
-
-    const logEntry: AuthAuditLog = {
-      id: `log-${Date.now()}`,
-      type: 'login_success',
-      udiseCode: cleanCode,
-      userName: updatedUser.name,
-      timestamp: new Date().toISOString(),
-      details: keepSignedIn ? 'Signed in (7 days session)' : 'Signed in (8 hours session)',
-    };
-    setAuthAuditLogs((prev) => [logEntry, ...prev.slice(0, 99)]);
-
-    return { success: true };
   };
 
   const logout = () => {
+    firebaseSignOut().catch(() => {});
     if (currentUser) {
       const logEntry: AuthAuditLog = {
         id: `log-${Date.now()}`,
@@ -2294,9 +2293,9 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     return { success: true };
   };
 
-  const resetUserPassword = async (userId: string, tempPassword = '123456'): Promise<boolean> => {
+  const resetUserPassword = async (userId: string, tempPassword?: string): Promise<boolean> => {
     const user = users.find((u) => u.id === userId);
-    if (!user) return false;
+    if (!user || !tempPassword) return false;
 
     const salt = generateSalt(16);
     const passwordHash = await hashPassword(tempPassword, salt);
@@ -2318,7 +2317,7 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       udiseCode: user.udiseCode,
       userName: user.name,
       timestamp: new Date().toISOString(),
-      details: `Password reset to temporary password (${tempPassword})`,
+      details: 'Password reset to temporary credentials',
     };
     setAuthAuditLogs((prev) => [logEntry, ...prev.slice(0, 99)]);
 
@@ -2364,10 +2363,10 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const addUser = async (
     userData: Omit<User, 'id' | 'passwordHash' | 'salt' | 'failedAttempts'>,
-    initialPassword = '123456'
+    initialPassword?: string
   ): Promise<User> => {
     const salt = generateSalt(16);
-    const passwordHash = await hashPassword(initialPassword, salt);
+    const passwordHash = initialPassword ? await hashPassword(initialPassword, salt) : '';
 
     const newUser: User = {
       ...userData,
@@ -2518,6 +2517,9 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         setIsSupportEditOpen,
         isSupportModalOpen,
         setIsSupportModalOpen,
+        isFirebaseModalOpen,
+        setIsFirebaseModalOpen,
+        isFirebaseConnected,
         currentUser,
         session,
         users,

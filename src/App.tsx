@@ -18,6 +18,7 @@ import { UserManagementTab } from './components/auth/UserManagementTab';
 import { LogoutModal } from './components/common/LogoutModal';
 import { InactivityModal } from './components/common/InactivityModal';
 import { SupportEditModal } from './components/common/SupportEditModal';
+import { FirebaseSetupModal } from './components/common/FirebaseSetupModal';
 import { BellModePage } from './components/pages/BellModePage';
 import { DiagnosticsPage } from './components/pages/DiagnosticsPage';
 
@@ -55,6 +56,8 @@ const PortalLayout: React.FC = () => {
     isChangePasswordOpen,
     isForcedPasswordChange,
     setIsChangePasswordOpen,
+    isFirebaseModalOpen,
+    setIsFirebaseModalOpen,
   } = usePortal();
 
   // 1. Bell Mode: Public display mode that stays active regardless of auth status
@@ -96,6 +99,10 @@ const PortalLayout: React.FC = () => {
       <div className="min-h-screen bg-[#f1f5f9] text-slate-800 font-sans antialiased">
         <LoginPage />
         <SupportEditModal />
+        <FirebaseSetupModal
+          isOpen={isFirebaseModalOpen}
+          onClose={() => setIsFirebaseModalOpen(false)}
+        />
         <ToastContainer />
       </div>
     );
@@ -125,6 +132,10 @@ const PortalLayout: React.FC = () => {
       <LogoutModal />
       <InactivityModal />
       <SupportEditModal />
+      <FirebaseSetupModal
+        isOpen={isFirebaseModalOpen}
+        onClose={() => setIsFirebaseModalOpen(false)}
+      />
       <ChangePasswordModal
         isOpen={isChangePasswordOpen}
         isForced={isForcedPasswordChange}

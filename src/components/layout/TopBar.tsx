@@ -9,6 +9,7 @@ import {
   Users,
   ShieldAlert,
   Activity,
+  Flame,
 } from 'lucide-react';
 import { usePortal } from '../../store/portalStore';
 import { SchoolLogo } from '../common/SchoolLogo';
@@ -21,6 +22,8 @@ export const TopBar: React.FC = () => {
     setIsLogoutModalOpen,
     setIsChangePasswordOpen,
     navigateTo,
+    isFirebaseConnected,
+    setIsFirebaseModalOpen,
   } = usePortal();
 
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -72,6 +75,21 @@ export const TopBar: React.FC = () => {
             {schoolInfo.code}
           </span>
         </div>
+
+        {/* Firebase Cloud Status Button */}
+        <button
+          type="button"
+          onClick={() => setIsFirebaseModalOpen(true)}
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border transition-all cursor-pointer shadow-2xs ${
+            isFirebaseConnected
+              ? 'bg-amber-50 hover:bg-amber-100 border-amber-300 text-amber-900'
+              : 'bg-slate-50 hover:bg-slate-100 border-slate-300 text-slate-700'
+          }`}
+          title="Cloud Firestore Database Connection & Data Migration"
+        >
+          <Flame className="w-3.5 h-3.5 text-amber-500" />
+          <span className="hidden sm:inline">{isFirebaseConnected ? 'Cloud Live' : 'Connect Cloud'}</span>
+        </button>
 
         <div className="h-4 w-px bg-slate-200 hidden sm:block" />
 
@@ -163,6 +181,18 @@ export const TopBar: React.FC = () => {
                       <span>User Management</span>
                     </button>
                   )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsDropdownOpen(false);
+                      setIsFirebaseModalOpen(true);
+                    }}
+                    className="w-full flex items-center gap-2.5 px-4 py-2 text-xs text-slate-700 hover:text-slate-900 hover:bg-slate-100 transition-colors text-left cursor-pointer"
+                  >
+                    <Flame className="w-4 h-4 text-amber-500" />
+                    <span>Cloud Firestore & Sync</span>
+                  </button>
                 </div>
 
                 <div className="border-t border-slate-100 pt-1">

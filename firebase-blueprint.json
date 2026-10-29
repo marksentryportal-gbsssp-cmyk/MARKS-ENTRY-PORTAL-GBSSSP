@@ -1,0 +1,142 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with role-based access for school staff and super admins",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["super_admin", "admin", "teacher", "viewer"] },
+        "active": { "type": "boolean" },
+        "name": { "type": "string" },
+        "udiseCode": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "lastLoginAt": { "type": "string" }
+      },
+      "required": ["uid", "email", "role", "active"]
+    },
+    "Student": {
+      "title": "Student",
+      "description": "Student candidate enrollment record with roll number, class and section",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "studentName": { "type": "string" },
+        "fatherName": { "type": "string" },
+        "motherName": { "type": "string" },
+        "dob": { "type": "string" },
+        "gender": { "type": "string", "enum": ["Male", "Female", "Other"] },
+        "classId": { "type": "string" },
+        "section": { "type": "string" },
+        "rollNo": { "type": "string" },
+        "academicYear": { "type": "string" },
+        "registrationNo": { "type": "string" },
+        "admissionNo": { "type": "string" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["id", "name", "classId", "academicYear", "active"]
+    },
+    "Class": {
+      "title": "Class",
+      "description": "School standard class definition with sections",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "order": { "type": "number" },
+        "hasStreams": { "type": "boolean" }
+      },
+      "required": ["id", "name", "order"]
+    },
+    "Subject": {
+      "title": "Subject",
+      "description": "Curricular subject assigned to a class standard",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "classId": { "type": "string" },
+        "name": { "type": "string" },
+        "code": { "type": "string" },
+        "fullMarks": { "type": "number" },
+        "passMarks": { "type": "number" },
+        "order": { "type": "number" },
+        "type": { "type": "string", "enum": ["marks", "grade"] }
+      },
+      "required": ["id", "classId", "name", "fullMarks", "passMarks"]
+    },
+    "Examination": {
+      "title": "Examination",
+      "description": "Internal examination schedule and completion status",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "classId": { "type": "string" },
+        "className": { "type": "string" },
+        "examTypeId": { "type": "string" },
+        "academicYear": { "type": "string" },
+        "startDate": { "type": "string" },
+        "endDate": { "type": "string" },
+        "isFinalSubmitted": { "type": "boolean" },
+        "finalSubmittedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "classId", "academicYear"]
+    },
+    "Mark": {
+      "title": "Mark",
+      "description": "Subject score recorded for a student candidate in an examination",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "examId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "subjectId": { "type": "string" },
+        "component": { "type": "string" },
+        "obtained": { "type": "number" },
+        "absent": { "type": "boolean" },
+        "grade": { "type": "string" }
+      },
+      "required": ["id", "examId", "studentId", "subjectId"]
+    },
+    "Setting": {
+      "title": "Setting",
+      "description": "System configuration such as school metadata and result policies",
+      "type": "object",
+      "properties": {
+        "updatedAt": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "User" },
+      "description": "Authorized staff and administrator accounts"
+    },
+    "/students/{studentId}": {
+      "schema": { "$ref": "Student" },
+      "description": "Enrolled student records"
+    },
+    "/classes/{classId}": {
+      "schema": { "$ref": "Class" },
+      "description": "Academic classes"
+    },
+    "/subjects/{subjectId}": {
+      "schema": { "$ref": "Subject" },
+      "description": "Subjects mapped to academic standards"
+    },
+    "/examinations/{examId}": {
+      "schema": { "$ref": "Examination" },
+      "description": "Internal evaluations and examinations"
+    },
+    "/marks/{markId}": {
+      "schema": { "$ref": "Mark" },
+      "description": "Evaluation marks per candidate and subject"
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "Setting" },
+      "description": "School setup and result settings"
+    }
+  }
+}

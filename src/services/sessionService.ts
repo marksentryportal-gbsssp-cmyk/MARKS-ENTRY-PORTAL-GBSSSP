@@ -1,4 +1,6 @@
 import { User } from '../types';
+import { getFirebaseAuth } from './firebase';
+import { signOut } from 'firebase/auth';
 
 export interface SessionV1 {
   userId: string;
@@ -202,6 +204,16 @@ export function endSession(reason: LogoutReason = 'logout'): void {
   // Clear in-memory Google token and secrets
   inMemoryGoogleAccessToken = null;
 
+  // Securely sign out Firebase Auth
+  try {
+    const auth = getFirebaseAuth();
+    if (auth && auth.currentUser) {
+      signOut(auth).catch(() => {});
+    }
+  } catch {
+    // Non-blocking
+  }
+
   // Stop idle monitoring
   stopInactivityMonitoring();
 
@@ -355,6 +367,14 @@ export function emergencySignOut(): void {
     localStorage.removeItem('gopinath_school_portal_data_v5_auth');
   }
   inMemoryGoogleAccessToken = null;
+  try {
+    const auth = getFirebaseAuth();
+    if (auth && auth.currentUser) {
+      signOut(auth).catch(() => {});
+    }
+  } catch {
+    // Non-blocking
+  }
   window.location.replace('/#/login');
 }
 

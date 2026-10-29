@@ -1,0 +1,77 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    function isActiveUser() {
+      return isSignedIn() && getUserData().active == true;
+    }
+    
+    function isSuperAdmin() {
+      return isActiveUser() && getUserData().role == 'super_admin';
+    }
+    
+    function isAdmin() {
+      return isActiveUser() && (getUserData().role == 'admin' || getUserData().role == 'super_admin');
+    }
+
+    // User management: users can read their own profile, Super Admins can manage all
+    match /users/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isSuperAdmin());
+      allow write: if isSuperAdmin();
+    }
+
+    // Classes
+    match /classes/{classId} {
+      allow read: if isActiveUser();
+      allow write: if isAdmin();
+    }
+
+    // Subjects
+    match /subjects/{subjectId} {
+      allow read: if isActiveUser();
+      allow write: if isAdmin();
+    }
+
+    // Students
+    match /students/{studentId} {
+      allow read: if isActiveUser();
+      allow write: if isAdmin();
+    }
+
+    // Examinations
+    match /examinations/{examId} {
+      allow read: if isActiveUser();
+      allow write: if isAdmin();
+    }
+
+    // Marks
+    match /marks/{markId} {
+      allow read: if isActiveUser();
+      allow write: if isActiveUser();
+    }
+
+    // Settings
+    match /settings/{settingId} {
+      allow read: if isActiveUser();
+      allow write: if isAdmin();
+    }
+
+    // Checklists
+    match /checklists/{checklistId} {
+      allow read: if isActiveUser();
+      allow write: if isActiveUser();
+    }
+
+    // Connection ping
+    match /_connection_test/{testId} {
+      allow read: if true;
+    }
+  }
+}

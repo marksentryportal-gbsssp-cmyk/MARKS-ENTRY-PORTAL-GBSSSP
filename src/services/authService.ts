@@ -35,15 +35,11 @@ export async function verifyPassword(
 }
 
 /**
- * Standard seed credentials for initial admin
+ * Standard school institution identifiers
  */
 export const DEFAULT_ADMIN_CODE = '06H1003';
 export const DEFAULT_ADMIN_UDISE = '18020200403';
-export const DEFAULT_ADMIN_PASSWORD = 'Gopinath2024@';
-export const DEFAULT_ADMIN_SALT = 'salt_06h1003_secure_seed';
 
-// Pre-computed SHA-256 for "Gopinath2024@:salt_06h1003_secure_seed"
-export const DEFAULT_ADMIN_HASH = '7f136886cc9a737339a6c44a379224cc3fd34e2490d87c2ef266cb11308f2a6c';
 
 /**
  * Check password strength

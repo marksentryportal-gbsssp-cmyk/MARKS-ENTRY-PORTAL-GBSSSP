@@ -19,25 +19,16 @@ export const LoginPage: React.FC = () => {
     login,
     navigateTo,
     setIsSupportModalOpen,
+    isFirebaseConnected,
+    setIsFirebaseModalOpen,
   } = usePortal();
 
-  const [udiseCode, setUdiseCode] = useState(
-    schoolInfo.udiseCode && schoolInfo.udiseCode !== '18000000000'
-      ? schoolInfo.udiseCode
-      : '18020200403'
-  );
+  const [udiseCode, setUdiseCode] = useState('');
   const [password, setPassword] = useState('');
   const [keepSignedIn, setKeepSignedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [udiseError, setUdiseError] = useState<string | null>(null);
-
-  // Sync if schoolInfo updates
-  useEffect(() => {
-    if (schoolInfo.udiseCode && schoolInfo.udiseCode !== '18000000000') {
-      setUdiseCode(schoolInfo.udiseCode);
-    }
-  }, [schoolInfo.udiseCode]);
 
   // Lockout countdown timer
   const [lockoutSeconds, setLockoutSeconds] = useState<number>(0);
@@ -58,29 +49,18 @@ export const LoginPage: React.FC = () => {
   }, [lockoutSeconds]);
 
   const handleUdiseChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const sanitized = sanitizeUdiseCode(e.target.value);
-    setUdiseCode(sanitized);
+    setUdiseCode(e.target.value);
+    setUdiseError(null);
     if (errorMessage && lockoutSeconds <= 0) setErrorMessage(null);
-
-    if (sanitized.length > 0 && sanitized.length < 11) {
-      setUdiseError('School UDISE Code must be 11 digits');
-    } else {
-      setUdiseError(null);
-    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isLoading || lockoutSeconds > 0) return;
 
-    if (!udiseCode.trim()) {
-      setErrorMessage('Please enter your School UDISE Code.');
-      return;
-    }
-
-    if (!isValidUdiseCode(udiseCode)) {
-      setErrorMessage('School UDISE Code must be 11 digits');
-      setUdiseError('School UDISE Code must be 11 digits');
+    const trimmedInput = udiseCode.trim();
+    if (!trimmedInput) {
+      setErrorMessage('Please enter your registered email address.');
       return;
     }
 
@@ -93,11 +73,11 @@ export const LoginPage: React.FC = () => {
       setIsLoading(true);
       setErrorMessage(null);
 
-      const res = await login(udiseCode, password, keepSignedIn);
+      const res = await login(trimmedInput, password, keepSignedIn);
       setIsLoading(false);
 
       if (!res.success) {
-        setErrorMessage(res.error || 'Invalid School UDISE Code or password');
+        setErrorMessage(res.error || 'Invalid registered email or password');
         if (res.lockedSeconds) {
           setLockoutSeconds(res.lockedSeconds);
         }
@@ -249,7 +229,7 @@ export const LoginPage: React.FC = () => {
                       htmlFor="udiseCode"
                       className="block text-xs font-semibold text-slate-700"
                     >
-                      School UDISE Code <span className="text-red-500">*</span>
+                      Registered Email Address <span className="text-red-500">*</span>
                     </label>
                     <div className="relative flex items-center">
                       <div className="absolute left-3.5 text-slate-400 pointer-events-none">
@@ -257,13 +237,12 @@ export const LoginPage: React.FC = () => {
                       </div>
                       <input
                         id="udiseCode"
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={11}
+                        type="email"
+                        maxLength={80}
                         value={udiseCode}
                         onChange={handleUdiseChange}
                         disabled={isLoading || lockoutSeconds > 0}
-                        placeholder="Enter School UDISE Code"
+                        placeholder="e.g. gopinathschool2024@gmail.com"
                         className={`w-full pl-10 pr-3 py-2.5 text-sm font-mono text-slate-800 placeholder-slate-400 rounded-md border-b-2 bg-slate-50/70 hover:bg-slate-50 focus:bg-white border-t border-l border-r border-slate-200 transition-all focus:outline-hidden ${
                           udiseError
                             ? 'border-b-red-500 bg-red-50/30'
@@ -342,22 +321,23 @@ export const LoginPage: React.FC = () => {
                     </button>
                   </div>
 
-                  {/* School Credentials Notice with 1-click Auto-fill */}
-                  <div className="pt-2 text-center space-y-2">
-                    <p className="text-[11px] font-semibold text-[#0f766e] bg-teal-50/90 border border-teal-200/80 rounded px-2.5 py-1.5 leading-snug">
-                      School UDISE: <strong className="font-mono text-slate-800">18020200403</strong> &bull; Password: <strong className="font-mono text-slate-800">Gopinath2024@</strong>
-                    </p>
+                  {/* Firebase Cloud Firestore Quick Connect */}
+                  <div className="pt-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        setUdiseCode('18020200403');
-                        setPassword('Gopinath2024@');
-                        setErrorMessage(null);
-                        setUdiseError(null);
-                      }}
-                      className="text-[11px] font-bold text-purple-700 hover:text-purple-900 hover:underline cursor-pointer"
+                      onClick={() => setIsFirebaseModalOpen(true)}
+                      className={`w-full py-1.5 px-3 rounded border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                        isFirebaseConnected
+                          ? 'bg-amber-50/70 border-amber-300 text-amber-900 hover:bg-amber-100'
+                          : 'bg-slate-50 border-slate-300 text-slate-700 hover:bg-slate-100'
+                      }`}
                     >
-                      Click here to auto-fill School Login credentials
+                      <span className="text-amber-500">🔥</span>
+                      <span>
+                        {isFirebaseConnected
+                          ? 'Cloud Firestore: Connected & Syncing'
+                          : 'Configure Firebase Web App / Cloud Database'}
+                      </span>
                     </button>
                   </div>
 
