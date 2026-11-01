@@ -277,7 +277,7 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <CloudUpload className="w-4 h-4 text-teal-700" />
-              <h4 className="font-bold text-slate-800">Safe Local-to-Firestore Data Migration</h4>
+              <h4 className="font-bold text-slate-800">Migration Preview & Firestore Cloud Upload</h4>
             </div>
             <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-bold">
               Preserves Local Records
@@ -285,9 +285,57 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
           </div>
 
           <p className="text-slate-600 leading-relaxed text-[11px]">
-            Uploads your school student admissions, marks records, examination timetables, and grading settings into Cloud Firestore.
-            Local browser storage is kept untouched as a secure offline backup.
+            Review all records identified in your browser storage and application sources below.
+            You can download a complete JSON backup before performing cloud synchronization.
           </p>
+
+          {/* Migration Preview Stats */}
+          <div className="bg-white border border-slate-200 rounded-md p-3 space-y-2">
+            <span className="font-bold text-slate-700 text-[11px] block uppercase tracking-wide">
+              Identified Records Ready for Cloud Sync:
+            </span>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-center text-xs">
+              <div className="p-2 bg-slate-50 rounded border border-slate-100">
+                <span className="text-[10px] text-slate-500 uppercase block font-semibold">Students</span>
+                <span className="text-base font-bold text-teal-700 font-mono">{students.length}</span>
+              </div>
+              <div className="p-2 bg-slate-50 rounded border border-slate-100">
+                <span className="text-[10px] text-slate-500 uppercase block font-semibold">Classes</span>
+                <span className="text-base font-bold text-slate-800 font-mono">{classes.length}</span>
+              </div>
+              <div className="p-2 bg-slate-50 rounded border border-slate-100">
+                <span className="text-[10px] text-slate-500 uppercase block font-semibold">Examinations</span>
+                <span className="text-base font-bold text-purple-700 font-mono">{exams.length}</span>
+              </div>
+              <div className="p-2 bg-slate-50 rounded border border-slate-100">
+                <span className="text-[10px] text-slate-500 uppercase block font-semibold">Subjects</span>
+                <span className="text-base font-bold text-slate-800 font-mono">{subjects.length}</span>
+              </div>
+              <div className="p-2 bg-slate-50 rounded border border-slate-100">
+                <span className="text-[10px] text-slate-500 uppercase block font-semibold">Marks Records</span>
+                <span className="text-base font-bold text-amber-700 font-mono">{marks.length}</span>
+              </div>
+              <div className="p-2 bg-slate-50 rounded border border-slate-100">
+                <span className="text-[10px] text-slate-500 uppercase block font-semibold">Academic Sessions</span>
+                <span className="text-xs font-bold text-indigo-700 font-mono mt-1 block">2026-27 & 2025-26</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Backup Button before Migration */}
+          <div className="p-2.5 bg-amber-50/80 border border-amber-200 rounded flex items-center justify-between gap-2">
+            <div className="text-[11px] text-amber-900">
+              <strong>Step 1:</strong> Download an offline verified backup of all existing records.
+            </div>
+            <button
+              type="button"
+              onClick={exportBackup}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold rounded text-xs shadow-2xs transition-colors cursor-pointer shrink-0"
+            >
+              <Download className="w-3.5 h-3.5 text-amber-700" />
+              <span>Download Backup (JSON)</span>
+            </button>
+          </div>
 
           {isMigrating && migrationProgress && (
             <div className="space-y-1.5 p-3 bg-white border border-teal-200 rounded">
@@ -316,7 +364,10 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
             </div>
           )}
 
-          <div className="flex justify-end pt-1">
+          <div className="flex items-center justify-between pt-1">
+            <span className="text-[10px] text-slate-500 italic">
+              * Requires your explicit confirmation before writing any record to Firestore.
+            </span>
             <button
               type="button"
               disabled={isMigrating || connectionStatus !== 'connected'}
