@@ -11,6 +11,7 @@ import {
   Phone,
   Edit2,
   Users as UsersIcon,
+  Trash2,
 } from 'lucide-react';
 import { usePortal } from '../../store/portalStore';
 import { NavigationTab } from '../../types';
@@ -31,6 +32,7 @@ const topNavItems: NavItem[] = [
   { id: 'checklist', label: 'Checklist', path: '/checklist', icon: ListChecks },
   { id: 'final-submit', label: 'Final Submit', path: '/final-submit', icon: SendHorizontal },
   { id: 'users', label: 'User Management', path: '/users', icon: UsersIcon, adminOnly: true },
+  { id: 'recycle-bin', label: 'Recycle Bin', path: '/recycle-bin', icon: Trash2, adminOnly: true },
 ];
 
 const examSetupItem: NavItem = {

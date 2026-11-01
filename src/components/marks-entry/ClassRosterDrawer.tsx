@@ -65,10 +65,10 @@ export const ClassRosterDrawer: React.FC<ClassRosterDrawerProps> = ({
   const [startFromNumber, setStartFromNumber] = useState<number>(1);
   const [adminReason, setAdminReason] = useState<string>('');
 
-  // Filter students for this class and year
+  // Filter students for this class and year (excluding soft-deleted)
   const rawClassStudents = useMemo(() => {
     return students.filter(
-      (s) => s.classId === classId && s.academicYear === academicYear && s.active !== false
+      (s) => s.classId === classId && s.academicYear === academicYear && s.active !== false && !s.deleted
     );
   }, [students, classId, academicYear]);
 
@@ -177,15 +177,14 @@ export const ClassRosterDrawer: React.FC<ClassRosterDrawerProps> = ({
     addToast('All students renumbered successfully!', 'success');
   };
 
-  // Handle Remove Student
-  const handleRemove = (student: Student) => {
+  // Handle Remove Student (Soft Delete with Cloud Sync)
+  const handleRemove = async (student: Student) => {
     if (
       confirm(
-        `Are you sure you want to remove ${student.name} (Roll ${student.rollNo}) from Class ${className}?`
+        `Are you sure you want to move ${student.name} (Roll ${student.rollNo}) to the Recycle Bin? (All examination marks and historical results will be preserved).`
       )
     ) {
-      deleteStudentWithAction(student.id, 'soft');
-      addToast(`Student ${student.name} marked inactive and removed from class roster.`, 'info');
+      await deleteStudentWithAction(student.id, 'soft', 'Soft deleted via Class Roster');
     }
   };
 

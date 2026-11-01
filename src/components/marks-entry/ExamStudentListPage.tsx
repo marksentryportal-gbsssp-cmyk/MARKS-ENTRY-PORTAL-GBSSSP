@@ -23,6 +23,7 @@ import { StudentModal } from './StudentModal';
 import { EditStudentModal } from './EditStudentModal';
 import { BulkImportModal } from '../bulk-import/BulkImportModal';
 import { ClassRosterDrawer } from './ClassRosterDrawer';
+import { Button } from '../common/Button';
 
 interface ExamStudentListPageProps {
   classId: string;
@@ -278,32 +279,19 @@ export const ExamStudentListPage: React.FC<ExamStudentListPageProps> = ({
         return (
           <div className="flex items-center justify-center gap-2 relative">
             {/* Primary Action Button: Enter Marks or View Marks */}
-            <button
-              type="button"
+            <Button
+              variant={isCompleted ? 'primary' : 'update'}
+              size="sm"
               onClick={() => handleActionClick(s.id)}
-              className={`inline-flex items-center justify-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-md shadow-2xs hover:shadow transition-colors cursor-pointer ${
-                isCompleted
-                  ? 'bg-teal-700 hover:bg-teal-800 text-white'
-                  : 'bg-[#9333ea] hover:bg-[#7e22ce] text-white'
-              }`}
+              icon={isCompleted ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Edit className="w-3.5 h-3.5" />}
               title={
                 isCompleted
                   ? 'View / Edit Marks for this candidate'
                   : 'Enter marks for this candidate'
               }
             >
-              {isCompleted ? (
-                <>
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>View / Edit</span>
-                </>
-              ) : (
-                <>
-                  <Edit className="w-3.5 h-3.5" />
-                  <span>Enter Marks</span>
-                </>
-              )}
-            </button>
+              {isCompleted ? 'View / Edit' : 'Enter Marks'}
+            </Button>
 
             {/* Context menu for student operations if exam not submitted */}
             {!isFinalSubmitted && (
@@ -433,39 +421,39 @@ export const ExamStudentListPage: React.FC<ExamStudentListPageProps> = ({
 
           <div className="flex flex-wrap items-center gap-2.5">
             {/* Class Roster & Renumber Tool Button */}
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="md"
               onClick={() => setIsRosterOpen(true)}
-              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 text-xs font-semibold rounded-md shadow-2xs transition-colors cursor-pointer"
+              icon={<Users className="w-4 h-4 text-slate-600" />}
               title="View class student roster and renumber roll numbers"
             >
-              <Users className="w-4 h-4 text-slate-600" />
-              <span>Class Roster &amp; Renumber</span>
-            </button>
+              Class Roster &amp; Renumber
+            </Button>
 
             {!isFinalSubmitted && (
               <>
-                {/* Button 1: Click to Add Student (Teal background) */}
-                <button
-                  type="button"
+                {/* Button 1: Click to Add Student (Green + Teal) */}
+                <Button
+                  variant="add"
+                  size="md"
                   disabled={isOutsideDates}
                   onClick={() => setIsAddStudentOpen(true)}
-                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-[#0f766e] hover:bg-teal-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-md shadow-xs transition-colors cursor-pointer"
+                  icon={<UserPlus className="w-4 h-4" />}
                 >
-                  <UserPlus className="w-4 h-4" />
-                  <span>Click to Add Student</span>
-                </button>
+                  Click to Add Student
+                </Button>
 
-                {/* Button 2: Bulk Import (White background, teal outline, teal text, upload icon) */}
-                <button
-                  type="button"
+                {/* Button 2: Bulk Import (Cyan + Blue) */}
+                <Button
+                  variant="import"
+                  size="md"
                   disabled={isOutsideDates}
                   onClick={() => setIsBulkImportOpen(true)}
-                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-white hover:bg-teal-50/70 border border-[#0f766e] text-[#0f766e] disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold rounded-md shadow-2xs transition-colors cursor-pointer"
+                  icon={<Upload className="w-4 h-4" />}
                 >
-                  <Upload className="w-4 h-4 text-[#0f766e]" />
-                  <span>Bulk Import</span>
-                </button>
+                  Bulk Import
+                </Button>
               </>
             )}
           </div>

@@ -8,6 +8,7 @@ export type NavigationTab =
   | 'checklist'
   | 'final-submit'
   | 'users'
+  | 'recycle-bin'
   | 'bell-mode'
   | 'diagnostics';
 
@@ -103,6 +104,12 @@ export interface Student {
   registrationNo?: string; // Optional
   admissionNo?: string;    // Optional
   active: boolean;
+  // Soft Delete fields (retaining historical marks and results)
+  deleted?: boolean;
+  deletedAt?: string;      // ISO timestamp
+  deletedBy?: string;      // User identifier or name
+  deleteReason?: string;
+  updatedAt?: any;
 }
 
 export type MarksStatus = 'not_completed' | 'completed';
@@ -187,7 +194,7 @@ export interface MarksAuditLog {
   examId: string;
   studentId: string;
   studentName?: string;
-  action: 'submit' | 'draft' | 'mark_absent' | 'undo_absent' | 'delete';
+  action: 'submit' | 'draft' | 'mark_absent' | 'undo_absent' | 'delete' | 'restore';
   updatedAt: string;
   updatedBy: string;
   notes?: string;

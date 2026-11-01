@@ -39,6 +39,7 @@ import { SchoolLogo } from '../common/SchoolLogo';
 import { DocumentHeader } from '../common/DocumentHeader';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import { Button } from '../common/Button';
 
 export const ChecklistPage: React.FC = () => {
   const {
@@ -854,62 +855,64 @@ const ExamChecklistView: React.FC<ExamChecklistViewProps> = ({ examId }) => {
 
         {/* Right Toolbar Actions */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Save snapshot */}
-          <button
-            type="button"
+          {/* Save snapshot (Violet + Pink) */}
+          <Button
+            variant="draft"
+            size="sm"
             onClick={() => setIsSnapshotModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white border border-slate-300 hover:bg-slate-50 transition-colors shadow-2xs"
+            icon={<BookmarkPlus className="w-3.5 h-3.5" />}
             title="Preserve a permanent archival snapshot"
           >
-            <BookmarkPlus className="w-3.5 h-3.5 text-purple-600" />
-            <span>Save snapshot</span>
-          </button>
+            Save snapshot
+          </Button>
 
-          {/* Save to Drive */}
-          <button
-            type="button"
+          {/* Save to Drive (Cyan + Blue) */}
+          <Button
+            variant="import"
+            size="sm"
             onClick={handleSaveToDrive}
-            disabled={isUploadingToDrive}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white border border-slate-300 hover:bg-slate-50 transition-colors shadow-2xs disabled:opacity-60"
+            isLoading={isUploadingToDrive}
+            loadingText="Archiving..."
+            icon={<Cloud className="w-3.5 h-3.5" />}
             title="Archive copy to Google Drive"
           >
-            <Cloud className="w-3.5 h-3.5 text-blue-600" />
-            <span>{isUploadingToDrive ? 'Archiving...' : 'Save to Drive'}</span>
-          </button>
+            Save to Drive
+          </Button>
 
-          {/* Download Excel */}
-          <button
-            type="button"
+          {/* Download Excel (Cyan + Blue) */}
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={handleExportExcel}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white border border-slate-300 hover:bg-slate-50 transition-colors shadow-2xs"
+            icon={<FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />}
             title="Download Excel Spreadsheet (.xlsx)"
           >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Excel</span>
-          </button>
+            Excel
+          </Button>
 
-          {/* Download PDF */}
-          <button
-            type="button"
+          {/* Download PDF (Slate + Navy) */}
+          <Button
+            variant="back"
+            size="sm"
             onClick={handleDownloadPdf}
-            disabled={isGeneratingPdf}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-slate-800 hover:bg-slate-900 transition-colors shadow-2xs disabled:opacity-60"
+            isLoading={isGeneratingPdf}
+            loadingText="Generating..."
+            icon={<FileDown className="w-3.5 h-3.5 text-rose-400" />}
             title="Generate and Download PDF"
           >
-            <FileDown className="w-3.5 h-3.5 text-rose-400" />
-            <span>{isGeneratingPdf ? 'Generating PDF...' : 'Download PDF'}</span>
-          </button>
+            Download PDF
+          </Button>
 
-          {/* Print */}
-          <button
-            type="button"
+          {/* Print (Indigo + Purple) */}
+          <Button
+            variant="print"
+            size="sm"
             onClick={handlePrint}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-xs font-semibold text-white bg-[#0f766e] hover:bg-[#115e59] transition-colors shadow-2xs"
+            icon={<Printer className="w-3.5 h-3.5" />}
             title="Print or Save as PDF via Browser"
           >
-            <Printer className="w-3.5 h-3.5" />
-            <span>Print</span>
-          </button>
+            Print
+          </Button>
         </div>
       </div>
 

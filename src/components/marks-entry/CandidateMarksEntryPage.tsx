@@ -23,6 +23,7 @@ import { EditStudentModal } from './EditStudentModal';
 import { ConfirmSubmitModal } from './ConfirmSubmitModal';
 import { getExamStatus } from '../../utils/dateUtils';
 import { getNextStudent } from '../../utils/rollNoUtils';
+import { Button } from '../common/Button';
 
 interface CandidateMarksEntryPageProps {
   classId: string;
@@ -1092,66 +1093,65 @@ export const CandidateMarksEntryPage: React.FC<CandidateMarksEntryPageProps> = (
             {/* On mobile: row 1 has GO BACK, Save as draft, SUBMIT; row 2 has SUBMIT & NEXT full width */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 border-t border-slate-100 pt-2 lg:border-t-0 lg:pt-0">
               <div className="grid grid-cols-3 sm:flex items-center gap-2">
-                {/* 1. GO BACK (outlined) */}
-                <button
-                  type="button"
+                {/* 1. GO BACK (Slate + Navy) */}
+                <Button
+                  variant="back"
+                  size="md"
                   onClick={() => {
                     try {
                       sessionStorage.setItem('last_edited_student_id', activeStudentId);
                     } catch {}
                     navigateTo(`/marks-entry/${classId}/${examId}`, { preserveScroll: true });
                   }}
-                  className="inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all shadow-2xs cursor-pointer"
+                  icon={<ArrowLeft className="w-3.5 h-3.5 shrink-0" />}
                 >
-                  <ArrowLeft className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                  <span>GO BACK</span>
-                </button>
+                  GO BACK
+                </Button>
 
-                {/* 2. Save as draft (light purple outlined) */}
+                {/* 2. Save as draft (Violet + Pink) */}
                 {!isReadOnly && (
-                  <button
-                    type="button"
+                  <Button
+                    variant="draft"
+                    size="md"
                     onClick={handleSaveDraft}
-                    className="inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-md border border-purple-300 bg-purple-50 hover:bg-purple-100 text-[#7e22ce] text-xs font-bold transition-all shadow-2xs cursor-pointer"
+                    icon={<FileEdit className="w-3.5 h-3.5 shrink-0" />}
                     title="Save without marking as completed"
                   >
-                    <FileEdit className="w-3.5 h-3.5 text-[#9333ea] shrink-0" />
-                    <span>Save as draft</span>
-                  </button>
+                    Save as draft
+                  </Button>
                 )}
 
-                {/* 3. SUBMIT (teal filled) */}
+                {/* 3. SUBMIT / UPDATE (Blue + Purple) */}
                 {!isReadOnly && (
-                  <button
-                    type="button"
+                  <Button
+                    variant="update"
+                    size="md"
                     onClick={() => handleTriggerSubmit('submit_only')}
-                    className="inline-flex items-center justify-center gap-1 px-3.5 py-1.5 rounded-md bg-[#0f766e] hover:bg-teal-800 text-white text-xs font-bold transition-all shadow-2xs cursor-pointer"
+                    icon={<Save className="w-3.5 h-3.5 shrink-0" />}
                   >
-                    <Save className="w-3.5 h-3.5 shrink-0" />
-                    <span>{isAlreadyCompleted ? 'UPDATE' : 'SUBMIT'}</span>
-                  </button>
+                    {isAlreadyCompleted ? 'UPDATE' : 'SUBMIT'}
+                  </Button>
                 )}
               </div>
 
-              {/* 4. SUBMIT & NEXT (purple filled, with Ctrl+Enter badge; full width on mobile) */}
+              {/* 4. SUBMIT & NEXT (Purple + Blue prominent with Ctrl+Enter badge) */}
               {!isReadOnly && (
-                <button
-                  type="button"
-                  disabled={isSubmitting}
+                <Button
+                  variant="updateNext"
+                  size="lg"
+                  isLoading={isSubmitting}
                   onClick={() => handleTriggerSubmit('submit_and_next')}
-                  className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-md bg-[#9333ea] hover:bg-[#7e22ce] text-white text-xs font-black tracking-wide transition-all shadow-xs hover:shadow-sm cursor-pointer ring-2 ring-purple-300/50 disabled:opacity-50"
+                  className="w-full sm:w-auto shadow-sm ring-2 ring-purple-300/40"
                   title="Submit and immediately open next student (Ctrl+Enter)"
+                  icon={!isSubmitting ? <Send className="w-3.5 h-3.5 shrink-0" /> : undefined}
                 >
-                  {isSubmitting ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-                  ) : (
-                    <Send className="w-3.5 h-3.5 shrink-0" />
-                  )}
-                  <span>{isAlreadyCompleted ? 'UPDATE & NEXT' : 'SUBMIT & NEXT'}</span>
-                  <span className="text-[9px] bg-purple-900/60 text-purple-200 px-1 py-0.2 rounded font-mono font-normal">
-                    Ctrl+Enter
+                  <span className="flex items-center gap-1.5">
+                    <span>{isAlreadyCompleted ? 'UPDATE & NEXT' : 'SUBMIT & NEXT'}</span>
+                    <span className="text-[9px] bg-white/20 text-white px-1.5 py-0.5 rounded font-mono font-medium tracking-normal">
+                      Ctrl+Enter
+                    </span>
                   </span>
-                </button>
+                </Button>
               )}
             </div>
           </div>

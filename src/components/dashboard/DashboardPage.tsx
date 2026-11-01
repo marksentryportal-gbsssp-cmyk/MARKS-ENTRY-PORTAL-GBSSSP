@@ -21,6 +21,7 @@ import { usePortal } from '../../store/portalStore';
 import { getExamStatus } from '../../utils/dateUtils';
 import { sanitizeUdiseCode, isValidUdiseCode } from '../../utils/validators';
 import { verifyPassword } from '../../services/authService';
+import { Button } from '../common/Button';
 
 export const DashboardPage: React.FC = () => {
   const {
@@ -249,31 +250,29 @@ export const DashboardPage: React.FC = () => {
                 Welcome to the centralized internal examination management system for <strong>{schoolInfo.name}</strong>. Use the navigation buttons below to select a class or configure examinations:
               </p>
 
-              {/* Primary Action Buttons in Purple (#9333ea) */}
+              {/* Primary Action Buttons in Mixed Gradients */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                <button
-                  type="button"
+                <Button
+                  variant="update"
+                  size="lg"
                   onClick={() => navigateTo('/marks-entry')}
-                  className="flex items-center justify-between px-4 py-3 bg-[#9333ea] hover:bg-[#7e22ce] text-white font-semibold text-xs rounded-lg shadow-xs hover:shadow transition-all group cursor-pointer"
+                  icon={<FileSpreadsheet className="w-4 h-4" />}
+                  className="justify-between"
                 >
-                  <span className="flex items-center gap-2">
-                    <FileSpreadsheet className="w-4 h-4" />
-                    <span>Marks Entry by Class</span>
-                  </span>
-                  <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
-                </button>
+                  <span className="flex-1 text-left">Marks Entry by Class</span>
+                  <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1 ml-2" />
+                </Button>
 
-                <button
-                  type="button"
+                <Button
+                  variant="add"
+                  size="lg"
                   onClick={() => navigateTo('/exam-setup')}
-                  className="flex items-center justify-between px-4 py-3 bg-[#0f766e] hover:bg-teal-800 text-white font-semibold text-xs rounded-lg shadow-xs hover:shadow transition-all group cursor-pointer"
+                  icon={<Sparkles className="w-4 h-4" />}
+                  className="justify-between"
                 >
-                  <span className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4" />
-                    <span>Exam Master Setup</span>
-                  </span>
-                  <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
-                </button>
+                  <span className="flex-1 text-left">Exam Master Setup</span>
+                  <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1 ml-2" />
+                </Button>
               </div>
 
               {/* Quick Metrics Strip */}
@@ -472,17 +471,18 @@ export const DashboardPage: React.FC = () => {
                       {exam.endDate}
                     </td>
                     <td className="py-2 px-3 text-center">
-                      <button
-                        type="button"
+                      <Button
+                        variant="update"
+                        size="compact"
                         onClick={() =>
                           navigateTo(`/marks-entry/${exam.classId}/${exam.id}`)
                         }
-                        className="inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-[#9333ea] hover:bg-[#7e22ce] text-white text-xs font-semibold rounded-md shadow-2xs hover:shadow transition-colors group cursor-pointer"
                         title="Go to marks entry for this exam"
+                        icon={<ArrowRight className="w-3 h-3 transition-transform group-hover:translate-x-0.5" />}
+                        iconPosition="right"
                       >
-                        <span>Go</span>
-                        <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
-                      </button>
+                        Go
+                      </Button>
                     </td>
                   </tr>
                 ))}

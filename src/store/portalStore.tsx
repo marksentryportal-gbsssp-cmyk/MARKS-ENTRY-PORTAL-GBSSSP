@@ -67,6 +67,8 @@ import {
   firebaseSignOut,
   saveStudentToFirestore,
   deleteStudentFromFirestore,
+  softDeleteStudentInFirestore,
+  restoreStudentInFirestore,
   saveMarkToFirestore,
   batchSaveMarksToFirestore,
   saveExamToFirestore,
@@ -183,7 +185,8 @@ interface PortalContextType {
   ) => void;
   createStudent: (studentData: Omit<Student, 'id'>, targetExamId?: string) => Student;
   updateStudent: (studentId: string, updates: Partial<Student>) => void;
-  deleteStudent: (studentId: string) => void;
+  deleteStudent: (studentId: string, reason?: string) => Promise<{ success: boolean; error?: string }>;
+  restoreStudent: (studentId: string) => Promise<{ success: boolean; error?: string }>;
   addStudentToExam: (examId: string, studentId: string) => void;
   removeStudentFromExam: (examId: string, studentId: string) => void;
   getMarksStatus: (examId: string, studentId: string) => MarksStatus;
@@ -229,7 +232,11 @@ interface PortalContextType {
   }) => void;
   markStudentAbsentAll: (examId: string, studentId: string, classSubjects: Subject[]) => void;
   undoStudentAbsentAll: (examId: string, studentId: string) => void;
-  deleteStudentWithAction: (studentId: string, mode: 'soft' | 'hard') => { success: boolean; marksCount: number };
+  deleteStudentWithAction: (
+    studentId: string,
+    mode: 'soft' | 'hard',
+    reason?: string
+  ) => Promise<{ success: boolean; marksCount: number; error?: string }>;
   getStudentExamCountWithMarks: (studentId: string) => number;
 
   // Checklist & Snapshot Archives
@@ -1468,11 +1475,11 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     let enrolledIds = examStudents[examId];
     let list: Student[] = [];
     if (!enrolledIds) {
-      list = students.filter((s) => s.classId === exam.classId && s.active);
+      list = students.filter((s) => s.classId === exam.classId && s.active && !s.deleted);
     } else {
       list = enrolledIds
         .map((id) => students.find((s) => s.id === id))
-        .filter((s): s is Student => Boolean(s && s.active));
+        .filter((s): s is Student => Boolean(s && s.active && !s.deleted));
     }
     return sortByRollNo(list);
   };
@@ -1583,9 +1590,9 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     addToast('Student details updated successfully', 'success');
   };
 
-  const deleteStudent = (studentId: string) => {
-    setStudents((prev) => prev.map((s) => (s.id === studentId ? { ...s, active: false } : s)));
-    addToast('Student deactivated', 'info');
+  const deleteStudent = async (studentId: string, reason?: string): Promise<{ success: boolean; error?: string }> => {
+    const res = await deleteStudentWithAction(studentId, 'soft', reason);
+    return { success: res.success, error: res.error };
   };
 
   const addStudentToExam = (examId: string, studentId: string) => {
@@ -2049,17 +2056,39 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     addToast(`Absent status cleared. Ready for marks entry.`, 'info');
   };
 
-  const deleteStudentWithAction = (
+  const deleteStudentWithAction = async (
     studentId: string,
-    mode: 'soft' | 'hard'
-  ): { success: boolean; marksCount: number } => {
+    mode: 'soft' | 'hard',
+    reason?: string
+  ): Promise<{ success: boolean; marksCount: number; error?: string }> => {
     const marksCount = getStudentExamCountWithMarks(studentId);
     const student = students.find((s) => s.id === studentId);
+    const actorName = currentUser?.name || currentUser?.udiseCode || 'Super Admin';
 
     if (mode === 'soft') {
+      // 1. Update Cloud Firestore first to guarantee cloud persistence
+      const fbRes = await softDeleteStudentInFirestore(studentId, actorName, reason);
+      if (!fbRes.success) {
+        addToast(`Cloud deletion failed: ${fbRes.error || 'Permission denied'}. The student was not deleted.`, 'error');
+        return { success: false, marksCount, error: fbRes.error };
+      }
+
+      // 2. Only after Cloud Firestore confirms the write: update local state
+      const now = new Date().toISOString();
       setStudents((prev) =>
-        prev.map((s) => (s.id === studentId ? { ...s, active: false } : s))
+        prev.map((s) =>
+          s.id === studentId
+            ? {
+                ...s,
+                deleted: true,
+                deletedAt: now,
+                deletedBy: actorName,
+                deleteReason: reason || 'Soft deleted via Portal',
+              }
+            : s
+        )
       );
+
       setMarksAuditLogs((prev) => [
         {
           id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -2067,15 +2096,23 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           studentId,
           studentName: student?.name,
           action: 'delete',
-          updatedAt: new Date().toISOString(),
-          updatedBy: 'Teacher / Exam Incharge',
-          notes: 'Marked student as Inactive (kept existing marks)',
+          updatedAt: now,
+          updatedBy: actorName,
+          notes: `Moved to Recycle Bin (Cloud Synced). All ${marksCount} marks preserved.`,
         },
         ...prev,
       ]);
-      addToast(`Student "${student?.name}" marked as Inactive. All marks preserved.`, 'info');
+
+      addToast(`Student "${student?.name}" moved to Recycle Bin (Cloud Synced). All historical marks preserved.`, 'success');
       return { success: true, marksCount };
     } else {
+      // Hard delete mode
+      const fbRes = await deleteStudentFromFirestore(studentId);
+      if (!fbRes.success) {
+        addToast(`Cloud permanent deletion failed: ${fbRes.error || 'Permission denied'}.`, 'error');
+        return { success: false, marksCount, error: fbRes.error };
+      }
+
       setStudents((prev) => prev.filter((s) => s.id !== studentId));
       setExamStudents((prev) => {
         const next: Record<string, string[]> = {};
@@ -2093,14 +2130,59 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           studentName: student?.name,
           action: 'delete',
           updatedAt: new Date().toISOString(),
-          updatedBy: 'Teacher / Exam Incharge',
-          notes: `Permanently deleted student and removed records across ${marksCount} exam(s)`,
+          updatedBy: actorName,
+          notes: `Permanently deleted from Cloud Firestore across ${marksCount} exam(s)`,
         },
         ...prev,
       ]);
-      addToast(`Student "${student?.name}" permanently deleted.`, 'info');
+
+      addToast(`Student "${student?.name}" permanently removed from Cloud Firestore.`, 'info');
       return { success: true, marksCount };
     }
+  };
+
+  const restoreStudent = async (studentId: string): Promise<{ success: boolean; error?: string }> => {
+    const student = students.find((s) => s.id === studentId);
+    const actorName = currentUser?.name || currentUser?.udiseCode || 'Super Admin';
+
+    // 1. Write to Cloud Firestore first
+    const fbRes = await restoreStudentInFirestore(studentId, actorName);
+    if (!fbRes.success) {
+      addToast(`Cloud restoration failed: ${fbRes.error || 'Permission denied'}.`, 'error');
+      return { success: false, error: fbRes.error };
+    }
+
+    // 2. Only after Cloud Firestore confirms: update local state
+    setStudents((prev) =>
+      prev.map((s) =>
+        s.id === studentId
+          ? {
+              ...s,
+              deleted: false,
+              deletedAt: undefined,
+              deletedBy: undefined,
+              deleteReason: undefined,
+            }
+          : s
+      )
+    );
+
+    setMarksAuditLogs((prev) => [
+      {
+        id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        examId: 'all',
+        studentId,
+        studentName: student?.name,
+        action: 'restore',
+        updatedAt: new Date().toISOString(),
+        updatedBy: actorName,
+        notes: `Restored student from Recycle Bin to active roster (Cloud Synced).`,
+      },
+      ...prev,
+    ]);
+
+    addToast(`Student "${student?.name || studentId}" restored to active roster successfully!`, 'success');
+    return { success: true };
   };
 
   // ----------------------------------------------------------------
@@ -2574,6 +2656,7 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         createStudent,
         updateStudent,
         deleteStudent,
+        restoreStudent,
         addStudentToExam,
         removeStudentFromExam,
         getMarksStatus,

@@ -22,6 +22,7 @@ import { usePortal } from '../../store/portalStore';
 import { ExamRecord, Student, Subject } from '../../types';
 import { getExamCompletionStatus, ExamCompletionInfo } from '../../utils/dateUtils';
 import { sortByRollNo } from '../../utils/rollNoUtils';
+import { Button } from '../common/Button';
 
 export const FinalSubmitPage: React.FC = () => {
   const {
@@ -514,34 +515,30 @@ export const FinalSubmitPage: React.FC = () => {
                         {/* Action Column */}
                         <td className="py-2.5 px-4 text-center">
                           {isSubmitted ? (
-                            <button
-                              type="button"
+                            <Button
+                              variant="danger"
+                              size="sm"
                               onClick={() => handleOpenCancelSubmit(exam)}
                               disabled={!canCancel}
-                              className={`inline-flex items-center justify-center gap-1.5 px-3 py-1 rounded text-xs font-bold transition-colors cursor-pointer border ${
-                                canCancel
-                                  ? 'border-red-500 text-[#b91c1c] hover:bg-red-50'
-                                  : 'border-slate-300 text-slate-400 bg-slate-50 cursor-not-allowed'
-                              }`}
+                              icon={<RotateCcw className="w-3.5 h-3.5" />}
                               title={
                                 canCancel
                                   ? 'Cancel final submit and reopen exam for marks corrections'
                                   : 'Only school administrators can cancel Final Submit'
                               }
                             >
-                              <RotateCcw className="w-3.5 h-3.5" />
-                              <span>CANCEL FINAL SUBMIT</span>
-                            </button>
+                              CANCEL FINAL SUBMIT
+                            </Button>
                           ) : isComplete ? (
-                            <button
-                              type="button"
+                            <Button
+                              variant="finalSubmit"
+                              size="sm"
                               onClick={() => handleOpenFinalSubmit(exam)}
-                              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-1 rounded text-xs font-bold border border-[#0f766e] text-[#0f766e] hover:bg-teal-50 transition-colors shadow-2xs cursor-pointer"
+                              icon={<SendHorizontal className="w-3.5 h-3.5" />}
                               title="Confirm marks and final submit to lock this exam"
                             >
-                              <SendHorizontal className="w-3.5 h-3.5" />
-                              <span>Final Submit</span>
-                            </button>
+                              Final Submit
+                            </Button>
                           ) : (
                             <button
                               type="button"

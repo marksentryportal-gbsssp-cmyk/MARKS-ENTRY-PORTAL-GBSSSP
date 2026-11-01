@@ -352,17 +352,93 @@ export async function saveStudentToFirestore(student: Student): Promise<void> {
 }
 
 /**
- * Soft or hard deletes a student in Cloud Firestore
+ * Soft deletes a student in Cloud Firestore with audit metadata
+ * Preserves all historical marks, examinations, and results
  */
-export async function deleteStudentFromFirestore(studentId: string): Promise<void> {
+export async function softDeleteStudentInFirestore(
+  studentId: string,
+  deletedBy: string,
+  reason?: string
+): Promise<{ success: boolean; error?: string }> {
   const db = getFirebaseDb();
-  if (!db) return;
+  if (!db) {
+    return { success: false, error: 'Cloud Firestore is not connected. Please verify Firebase connection.' };
+  }
+  const path = `students/${studentId}`;
+  try {
+    const studentRef = doc(db, 'students', studentId);
+    const now = new Date().toISOString();
+    await setDoc(
+      studentRef,
+      {
+        deleted: true,
+        deletedAt: now,
+        deletedBy: deletedBy || 'Super Admin',
+        deleteReason: reason || 'Soft deleted via Portal',
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+    return { success: true };
+  } catch (error: any) {
+    console.error('Firestore soft delete failed:', error);
+    const errMessage = error?.message || 'Failed to update student deletion in Firestore';
+    return { success: false, error: errMessage };
+  }
+}
+
+/**
+ * Restores a soft-deleted student in Cloud Firestore
+ */
+export async function restoreStudentInFirestore(
+  studentId: string,
+  restoredBy: string
+): Promise<{ success: boolean; error?: string }> {
+  const db = getFirebaseDb();
+  if (!db) {
+    return { success: false, error: 'Cloud Firestore is not connected.' };
+  }
+  const path = `students/${studentId}`;
+  try {
+    const studentRef = doc(db, 'students', studentId);
+    const now = new Date().toISOString();
+    await setDoc(
+      studentRef,
+      {
+        deleted: false,
+        deletedAt: null,
+        deletedBy: null,
+        deleteReason: null,
+        restoredAt: now,
+        restoredBy: restoredBy || 'Super Admin',
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+    return { success: true };
+  } catch (error: any) {
+    console.error('Firestore restore student failed:', error);
+    const errMessage = error?.message || 'Failed to restore student in Firestore';
+    return { success: false, error: errMessage };
+  }
+}
+
+/**
+ * Hard deletes a student document permanently from Cloud Firestore
+ */
+export async function deleteStudentFromFirestore(studentId: string): Promise<{ success: boolean; error?: string }> {
+  const db = getFirebaseDb();
+  if (!db) {
+    return { success: false, error: 'Cloud Firestore is not connected.' };
+  }
   const path = `students/${studentId}`;
   try {
     const studentRef = doc(db, 'students', studentId);
     await deleteDoc(studentRef);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
+    return { success: true };
+  } catch (error: any) {
+    console.error('Firestore hard delete failed:', error);
+    return { success: false, error: error?.message || 'Failed to delete student from Firestore' };
   }
 }
 

@@ -27,6 +27,7 @@ import {
   getCurrentAcademicYear,
   getExamStatus,
 } from '../../utils/dateUtils';
+import { Button } from '../common/Button';
 
 export const ExamSetupPage: React.FC = () => {
   const {
@@ -727,15 +728,14 @@ export const ExamSetupPage: React.FC = () => {
               </span>
             </div>
 
-            <button
+            <Button
               type="submit"
-              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-[#9333ea] hover:bg-[#7e22ce] text-white font-medium text-xs rounded-lg shadow-sm transition-all cursor-pointer"
+              variant="add"
+              size="lg"
+              icon={<Plus className="w-4 h-4" />}
             >
-              <Plus className="w-4 h-4" />
-              <span>
-                Generate Exams ({selectedClassIds.length * selectedExamTypeIds.length} Combinations)
-              </span>
-            </button>
+              Generate Exams ({selectedClassIds.length * selectedExamTypeIds.length} Combinations)
+            </Button>
           </div>
         </form>
       </section>

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { Student, ExamRecord } from '../../types';
 import { usePortal } from '../../store/portalStore';
+import { Button } from '../common/Button';
 
 interface StudentInfoBarProps {
   exam: ExamRecord;
@@ -51,6 +52,7 @@ export const StudentInfoBar: React.FC<StudentInfoBarProps> = ({
 
   const [isAbsentModalOpen, setIsAbsentModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const existingMarksCount = getStudentExamCountWithMarks(student.id);
 
@@ -59,16 +61,24 @@ export const StudentInfoBar: React.FC<StudentInfoBarProps> = ({
     setIsAbsentModalOpen(false);
   };
 
-  const handleConfirmSoftDelete = () => {
-    deleteStudentWithAction(student.id, 'soft');
-    setIsDeleteModalOpen(false);
-    onStudentDeleted();
+  const handleConfirmSoftDelete = async () => {
+    setIsDeleting(true);
+    const res = await deleteStudentWithAction(student.id, 'soft', 'Soft deleted via Student Info Bar');
+    setIsDeleting(false);
+    if (res.success) {
+      setIsDeleteModalOpen(false);
+      onStudentDeleted();
+    }
   };
 
-  const handleConfirmHardDelete = () => {
-    deleteStudentWithAction(student.id, 'hard');
-    setIsDeleteModalOpen(false);
-    onStudentDeleted();
+  const handleConfirmHardDelete = async () => {
+    setIsDeleting(true);
+    const res = await deleteStudentWithAction(student.id, 'hard', 'Hard deleted via Student Info Bar');
+    setIsDeleting(false);
+    if (res.success) {
+      setIsDeleteModalOpen(false);
+      onStudentDeleted();
+    }
   };
 
   return (
@@ -180,52 +190,39 @@ export const StudentInfoBar: React.FC<StudentInfoBarProps> = ({
 
         {/* Row 3: Action Buttons (Three Outlined Purple Buttons) */}
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2">
             {/* 1. MARK ABSENT / UNDO ABSENT */}
-            <button
-              type="button"
+            <Button
+              variant={isAllAbsent ? 'amber' : 'outline'}
+              size={isCompact ? 'sm' : 'md'}
               disabled={isReadOnly}
               onClick={() => setIsAbsentModalOpen(true)}
-              className={`inline-flex items-center gap-1.5 ${isCompact ? 'px-2.5 py-1 text-xs' : 'px-3.5 py-1.5 text-xs'} rounded-md font-bold transition-all shadow-2xs border cursor-pointer ${
-                isAllAbsent
-                  ? 'bg-amber-50 text-amber-900 border-amber-400 hover:bg-amber-100 ring-2 ring-amber-300'
-                  : 'bg-white text-[#7e22ce] border-[#9333ea] hover:bg-purple-50 disabled:opacity-40 disabled:cursor-not-allowed'
-              }`}
+              icon={isAllAbsent ? <UserCheck className="w-3.5 h-3.5" /> : <UserX className="w-3.5 h-3.5" />}
             >
-              {isAllAbsent ? (
-                <>
-                  <UserCheck className="w-3.5 h-3.5 text-amber-700" />
-                  <span>UNDO ABSENT</span>
-                </>
-              ) : (
-                <>
-                  <UserX className="w-3.5 h-3.5 text-[#9333ea]" />
-                  <span>MARK ABSENT</span>
-                </>
-              )}
-            </button>
+              {isAllAbsent ? 'UNDO ABSENT' : 'MARK ABSENT'}
+            </Button>
 
             {/* 2. UPDATE STUDENT */}
-            <button
-              type="button"
+            <Button
+              variant="update"
+              size={isCompact ? 'sm' : 'md'}
               disabled={isReadOnly}
               onClick={onOpenEditStudent}
-              className={`inline-flex items-center gap-1.5 ${isCompact ? 'px-2.5 py-1 text-xs' : 'px-3.5 py-1.5 text-xs'} bg-white text-[#7e22ce] border border-[#9333ea] hover:bg-purple-50 rounded-md font-bold transition-all shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer`}
+              icon={<Edit2 className="w-3.5 h-3.5" />}
             >
-              <Edit2 className="w-3.5 h-3.5 text-[#9333ea]" />
-              <span>UPDATE STUDENT</span>
-            </button>
+              UPDATE STUDENT
+            </Button>
 
             {/* 3. DELETE STUDENT */}
-            <button
-              type="button"
+            <Button
+              variant="delete"
+              size={isCompact ? 'sm' : 'md'}
               disabled={isReadOnly}
               onClick={() => setIsDeleteModalOpen(true)}
-              className={`inline-flex items-center gap-1.5 ${isCompact ? 'px-2.5 py-1 text-xs' : 'px-3.5 py-1.5 text-xs'} bg-white text-[#7e22ce] border border-[#9333ea] hover:bg-red-50 hover:text-red-700 hover:border-red-400 rounded-md font-bold transition-all shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer`}
+              icon={<Trash2 className="w-3.5 h-3.5" />}
             >
-              <Trash2 className="w-3.5 h-3.5 text-[#9333ea]" />
-              <span>DELETE STUDENT</span>
-            </button>
+              DELETE STUDENT
+            </Button>
           </div>
 
           {/* Absent status pill badge if candidate is all absent */}
@@ -363,19 +360,21 @@ export const StudentInfoBar: React.FC<StudentInfoBarProps> = ({
               <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
                 <button
                   type="button"
+                  disabled={isDeleting}
                   onClick={handleConfirmHardDelete}
-                  className="px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 rounded border border-red-300"
+                  className="px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 rounded border border-red-300 disabled:opacity-50 cursor-pointer"
                   title="Remove record completely"
                 >
-                  Delete permanently
+                  {isDeleting ? 'Processing...' : 'Delete permanently'}
                 </button>
 
                 <button
                   type="button"
+                  disabled={isDeleting}
                   onClick={handleConfirmSoftDelete}
-                  className="px-4 py-1.5 text-xs font-bold text-white bg-teal-700 hover:bg-teal-800 rounded shadow-xs"
+                  className="px-4 py-1.5 text-xs font-bold text-white bg-teal-700 hover:bg-teal-800 rounded shadow-xs disabled:opacity-50 cursor-pointer"
                 >
-                  Mark Inactive (keep data)
+                  {isDeleting ? 'Updating Cloud...' : 'Move to Recycle Bin (keep data)'}
                 </button>
               </div>
             </div>

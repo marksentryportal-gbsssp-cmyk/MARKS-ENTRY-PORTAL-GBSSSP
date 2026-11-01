@@ -61,7 +61,7 @@ export const MarksEntryPage: React.FC<MarksEntryPageProps> = ({
   const classStudentsCount = useMemo(() => {
     if (!classId) return 0;
     return students.filter(
-      (s) => s.classId === classId && s.academicYear === defaultYear && s.active !== false
+      (s) => s.classId === classId && s.academicYear === defaultYear && s.active !== false && !s.deleted
     ).length;
   }, [students, classId, defaultYear]);
 

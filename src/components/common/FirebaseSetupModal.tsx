@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   RefreshCw,
   ExternalLink,
+  Download,
 } from 'lucide-react';
 import {
   getStoredFirebaseConfig,
@@ -32,7 +33,7 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
   isOpen,
   onClose,
 }) => {
-  const { addToast } = usePortal();
+  const { addToast, students, classes, exams, subjects, marks, exportBackup } = usePortal();
 
   const [config, setConfig] = useState<FirebaseWebConfig>(() => {
     return (

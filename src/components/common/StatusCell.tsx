@@ -3,6 +3,7 @@ import { ArrowRight, RotateCcw, CheckCircle2 } from 'lucide-react';
 import { ExamRecord } from '../../types';
 import { getExamStatus } from '../../utils/dateUtils';
 import { usePortal } from '../../store/portalStore';
+import { Button } from './Button';
 
 interface StatusCellProps {
   exam: ExamRecord;
@@ -53,15 +54,16 @@ export const StatusCell: React.FC<StatusCellProps> = ({
   // b) Open (today within start & end date)
   if (status === 'Open') {
     return (
-      <button
-        type="button"
+      <Button
+        variant="primary"
+        size="sm"
         onClick={handleGo}
-        className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-[#0f766e] hover:bg-teal-800 text-white text-xs font-medium rounded-md shadow-xs transition-colors group cursor-pointer"
         title="Open student marks entry"
+        icon={<ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />}
+        iconPosition="right"
       >
-        <span>Go to marks Entry system</span>
-        <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
-      </button>
+        Go to marks Entry system
+      </Button>
     );
   }
 

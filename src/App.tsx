@@ -21,6 +21,7 @@ import { SupportEditModal } from './components/common/SupportEditModal';
 import { FirebaseSetupModal } from './components/common/FirebaseSetupModal';
 import { BellModePage } from './components/pages/BellModePage';
 import { DiagnosticsPage } from './components/pages/DiagnosticsPage';
+import { RecycleBinPage } from './components/admin/RecycleBinPage';
 
 const PortalRouter: React.FC = () => {
   const { currentRoute } = usePortal();
@@ -44,6 +45,7 @@ const PortalRouter: React.FC = () => {
       {currentRoute.tab === 'checklist' && <ChecklistPage />}
       {currentRoute.tab === 'final-submit' && <FinalSubmitPage />}
       {currentRoute.tab === 'users' && <UserManagementTab />}
+      {currentRoute.tab === 'recycle-bin' && <RecycleBinPage />}
       {currentRoute.tab === 'diagnostics' && <DiagnosticsPage />}
     </main>
   );
