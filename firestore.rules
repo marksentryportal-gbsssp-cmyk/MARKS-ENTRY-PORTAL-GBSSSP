@@ -1,72 +1,7 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isSignedIn() {
-      return request.auth != null;
-    }
-    
-    function getUserData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-    }
-    
-    function isActiveUser() {
-      return isSignedIn();
-    }
-    
-    function isSuperAdmin() {
-      return isSignedIn();
-    }
-    
-    function isAdmin() {
-      return isSignedIn();
-    }
-
-    // Multi-tenant school data tree: schools/{schoolId}/...
-    match /schools/{schoolId} {
-      allow read, write: if isSignedIn() || true;
-      
-      match /{allSubcollections=**} {
-        allow read, write: if isSignedIn() || true;
-      }
-    }
-
-    // User management
-    match /users/{userId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
-    }
-
-    // Legacy collections (for backward compatibility and migration)
-    match /classes/{classId} {
-      allow read, write: if isSignedIn() || true;
-    }
-
-    match /subjects/{subjectId} {
-      allow read, write: if isSignedIn() || true;
-    }
-
-    match /students/{studentId} {
-      allow read, write: if isSignedIn() || true;
-    }
-
-    match /examinations/{examId} {
-      allow read, write: if isSignedIn() || true;
-    }
-
-    match /marks/{markId} {
-      allow read, write: if isSignedIn() || true;
-    }
-
-    match /settings/{settingId} {
-      allow read, write: if isSignedIn() || true;
-    }
-
-    match /checklists/{checklistId} {
-      allow read, write: if isSignedIn() || true;
-    }
-
-    // Connection ping & self test
-    match /_connection_test/{testId} {
+    match /{document=**} {
       allow read, write: if true;
     }
   }

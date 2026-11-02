@@ -92,6 +92,15 @@ import {
   runCloudSelfTest as runCloudSelfTestService,
   checkSchoolCloudDataCount,
 } from '../services/schoolFirestoreService';
+import {
+  loadAuthoritativeCloudData,
+  verifyFirestoreCloudRecords,
+  syncRecordToFirestoreAuthoritative,
+  subscribeAuthoritativeStudents,
+  subscribeAuthoritativeExams,
+  subscribeAuthoritativeMarks,
+  isDemoStudentDataset,
+} from '../services/authoritativeCloudService';
 
 interface PortalContextType {
   // Routing
