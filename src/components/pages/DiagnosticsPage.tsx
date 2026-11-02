@@ -52,7 +52,7 @@ export const DiagnosticsPage: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
+    <div className="space-y-6 w-full">
       {/* Top Header Card */}
       <div className="bg-white rounded-lg border border-slate-200 shadow-xs p-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">

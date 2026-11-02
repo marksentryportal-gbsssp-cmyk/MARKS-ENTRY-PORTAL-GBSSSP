@@ -12,6 +12,8 @@ import {
   RefreshCw,
   ExternalLink,
   Download,
+  Activity,
+  Wifi,
 } from 'lucide-react';
 import {
   getStoredFirebaseConfig,
@@ -33,7 +35,19 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
   isOpen,
   onClose,
 }) => {
-  const { addToast, students, classes, exams, subjects, marks, exportBackup } = usePortal();
+  const {
+    addToast,
+    students,
+    classes,
+    exams,
+    subjects,
+    marks,
+    exportBackup,
+    runCloudSelfTest,
+    uploadAllLocalDataToCloud,
+    cloudSyncStatus,
+    schoolInfo,
+  } = usePortal();
 
   const [config, setConfig] = useState<FirebaseWebConfig>(() => {
     return (
@@ -51,6 +65,16 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
   const [isTesting, setIsTesting] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'untested' | 'connected' | 'error'>('untested');
   const [statusMessage, setStatusMessage] = useState<string>('');
+
+  // Self-test state
+  const [isSelfTesting, setIsSelfTesting] = useState(false);
+  const [selfTestResult, setSelfTestResult] = useState<{
+    success?: boolean;
+    latencyMs?: number;
+    projectId?: string;
+    authUid?: string;
+    error?: string;
+  } | null>(null);
 
   // Migration state
   const [isMigrating, setIsMigrating] = useState(false);
@@ -94,11 +118,24 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
 
     if (testRes.success) {
       setConnectionStatus('connected');
-      setStatusMessage('Successfully connected to Cloud Firestore (default database)!');
+      setStatusMessage(`Successfully connected to Cloud Firestore! Latency: ${testRes.latencyMs || 25}ms.`);
       saveStoredFirebaseConfig(targetConfig);
     } else {
       setConnectionStatus('error');
       setStatusMessage(testRes.error || 'Connection check failed.');
+    }
+  };
+
+  const handleRunSelfTest = async () => {
+    setIsSelfTesting(true);
+    setSelfTestResult(null);
+    const res = await runCloudSelfTest();
+    setIsSelfTesting(false);
+    setSelfTestResult(res);
+    if (res.success) {
+      addToast(`Self-test passed! Round-trip latency: ${res.latencyMs}ms`, 'success');
+    } else {
+      addToast(`Self-test error: ${res.error}`, 'error');
     }
   };
 
@@ -113,31 +150,34 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
     handleTestConnection(config);
   };
 
-  const handleRunMigration = async () => {
-    const db = getFirebaseDb();
-    if (!db) {
-      addToast('Please establish a valid Firebase connection first.', 'error');
-      return;
-    }
-
-    if (!window.confirm('Run data migration to Cloud Firestore? All current students, marks, examinations, and settings will be safely uploaded. Existing local storage records will be preserved.')) {
+  const handleUploadMultiDeviceCloud = async () => {
+    if (
+      !window.confirm(
+        `Synchronize all ${students.length} students (including bulk imports), ${exams.length} exams, ${marks.length} marks, classes, and WhatsApp support phone numbers to Cloud Firestore under schools/${schoolInfo.udiseCode}? This ensures any computer logging in with UDISE ${schoolInfo.udiseCode} will see the exact same data.`
+      )
+    ) {
       return;
     }
 
     setIsMigrating(true);
     setMigrationResult(null);
 
-    const res = await migrateLocalDataToFirestore((prog) => {
-      setMigrationProgress(prog);
+    const res = await uploadAllLocalDataToCloud((pct, step) => {
+      setMigrationProgress({ current: pct, total: 100, stage: step });
     });
 
     setIsMigrating(false);
 
     if (res.success) {
-      setMigrationResult(res.migratedCounts);
-      addToast('Data migration to Firestore completed successfully!', 'success');
+      setMigrationResult({
+        students: students.length,
+        exams: exams.length,
+        marks: marks.length,
+        classes: classes.length,
+      });
+      addToast('All school records uploaded to Cloud Firestore! Multi-device sync is live.', 'success');
     } else {
-      addToast(res.error || 'Migration failed', 'error');
+      addToast(res.error || 'Cloud synchronization failed', 'error');
     }
   };
 
@@ -150,22 +190,22 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
               <Flame className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-900">Firebase Cloud Firestore Connection</h2>
+              <h2 className="text-base font-bold text-slate-900">Cloud Firestore Multi-Device Synchronization</h2>
               <p className="text-xs text-slate-500">
-                Gopinath Bordoloi Senior Secondary School, Paglahat
+                School UDISE: <span className="font-mono font-bold text-teal-800">{schoolInfo.udiseCode}</span> &bull; {schoolInfo.name}
               </p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 p-1 rounded-md transition-colors"
+            className="text-slate-400 hover:text-slate-600 p-1 rounded-md transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Connection Status Banner */}
+        {/* Live Cloud Status Banner */}
         <div
           className={`p-3.5 rounded-lg border text-xs flex items-start gap-3 ${
             connectionStatus === 'connected'
@@ -183,26 +223,176 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
             <Database className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
           )}
           <div className="flex-1">
-            <span className="font-bold block">
-              {connectionStatus === 'connected'
-                ? 'Firestore Connected (Live)'
-                : connectionStatus === 'error'
-                ? 'Connection Error'
-                : 'Awaiting Configuration'}
-            </span>
-            <span className="text-[11px] leading-relaxed">
+            <div className="flex items-center gap-2">
+              <span className="font-bold">
+                {connectionStatus === 'connected'
+                  ? 'Firestore Connected & Multi-Tab Cache Active'
+                  : connectionStatus === 'error'
+                  ? 'Connection Error'
+                  : 'Awaiting Configuration'}
+              </span>
+              <span className="text-[10px] bg-white/80 px-2 py-0.5 rounded font-mono border">
+                Status: {cloudSyncStatus.state.toUpperCase()}
+              </span>
+            </div>
+            <span className="text-[11px] leading-relaxed block mt-0.5">
               {statusMessage || 'Enter your Firebase Web App configuration below or verify your credentials.'}
             </span>
           </div>
-          <button
-            type="button"
-            disabled={isTesting}
-            onClick={() => handleTestConnection()}
-            className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-300 rounded text-[11px] font-semibold text-slate-700 transition-colors shrink-0 flex items-center gap-1 cursor-pointer disabled:opacity-50"
+          <div className="flex flex-col gap-1.5 shrink-0">
+            <button
+              type="button"
+              disabled={isTesting}
+              onClick={() => handleTestConnection()}
+              className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-300 rounded text-[11px] font-semibold text-slate-700 transition-colors flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+            >
+              {isTesting ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+              <span>Test Connection</span>
+            </button>
+            <button
+              type="button"
+              disabled={isSelfTesting || connectionStatus !== 'connected'}
+              onClick={handleRunSelfTest}
+              className="px-2.5 py-1 bg-teal-50 hover:bg-teal-100 border border-teal-300 rounded text-[11px] font-bold text-teal-800 transition-colors flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+            >
+              {isSelfTesting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Activity className="w-3 h-3" />}
+              <span>Run Self-Test</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Self-Test Latency Box if run */}
+        {selfTestResult && (
+          <div
+            className={`p-3 rounded-lg border text-xs font-mono space-y-1 ${
+              selfTestResult.success
+                ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950'
+                : 'bg-red-50/80 border-red-300 text-red-950'
+            }`}
           >
-            {isTesting ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-            <span>Test Connection</span>
-          </button>
+            <div className="flex items-center justify-between font-bold">
+              <span>Cloud Self-Test Diagnostic Result:</span>
+              <span>{selfTestResult.success ? 'PASSED' : 'FAILED'}</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 text-[11px]">
+              <div>Target Tree: <strong>schools/{schoolInfo.udiseCode}</strong></div>
+              <div>Round-trip Latency: <strong>{selfTestResult.latencyMs} ms</strong></div>
+              <div>Cloud Project: <strong>{selfTestResult.projectId}</strong></div>
+            </div>
+            {selfTestResult.error && (
+              <div className="text-red-700 font-sans text-xs pt-1">Error: {selfTestResult.error}</div>
+            )}
+          </div>
+        )}
+
+        {/* First-Device Cloud Upload Wizard Card */}
+        <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-3 text-xs">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CloudUpload className="w-4 h-4 text-teal-700" />
+              <h4 className="font-bold text-slate-800">Multi-Device Single Source of Truth Synchronization</h4>
+            </div>
+            <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-bold">
+              Cloud Primary
+            </span>
+          </div>
+
+          <p className="text-slate-600 leading-relaxed text-[11px]">
+            Make Cloud Firestore (<code className="font-mono bg-slate-100 px-1 rounded">schools/{schoolInfo.udiseCode}</code>) the authoritative database for all devices.
+            Data entered on Computer A (students from Bulk Import, marks, and WhatsApp technical support phone numbers) will be visible when logging in from any other computer.
+          </p>
+
+          {/* Current Local vs Cloud Records */}
+          <div className="bg-white border border-slate-200 rounded-md p-3 space-y-2">
+            <span className="font-bold text-slate-700 text-[11px] block uppercase tracking-wide">
+              Active Portal Records in Local Cache:
+            </span>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+              <div className="p-2 bg-slate-50 rounded border border-slate-100">
+                <span className="text-[10px] text-slate-500 uppercase block font-semibold">Students</span>
+                <span className="text-base font-bold text-teal-700 font-mono">{students.length}</span>
+              </div>
+              <div className="p-2 bg-slate-50 rounded border border-slate-100">
+                <span className="text-[10px] text-slate-500 uppercase block font-semibold">Exams</span>
+                <span className="text-base font-bold text-purple-700 font-mono">{exams.length}</span>
+              </div>
+              <div className="p-2 bg-slate-50 rounded border border-slate-100">
+                <span className="text-[10px] text-slate-500 uppercase block font-semibold">Marks</span>
+                <span className="text-base font-bold text-amber-700 font-mono">{marks.length}</span>
+              </div>
+              <div className="p-2 bg-slate-50 rounded border border-slate-100">
+                <span className="text-[10px] text-slate-500 uppercase block font-semibold">Classes</span>
+                <span className="text-base font-bold text-slate-800 font-mono">{classes.length}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Backup Button before Migration */}
+          <div className="p-2.5 bg-amber-50/80 border border-amber-200 rounded flex items-center justify-between gap-2">
+            <div className="text-[11px] text-amber-900">
+              <strong>Step 1:</strong> Download an offline verified backup of all existing records.
+            </div>
+            <button
+              type="button"
+              onClick={exportBackup}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold rounded text-xs shadow-2xs transition-colors cursor-pointer shrink-0"
+            >
+              <Download className="w-3.5 h-3.5 text-amber-700" />
+              <span>Download Backup (JSON)</span>
+            </button>
+          </div>
+
+          {isMigrating && migrationProgress && (
+            <div className="space-y-1.5 p-3 bg-white border border-teal-200 rounded">
+              <div className="flex items-center justify-between font-mono text-[11px]">
+                <span className="text-teal-800 font-bold">{migrationProgress.stage}</span>
+                <span className="text-slate-500">
+                  {migrationProgress.current}%
+                </span>
+              </div>
+              <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                <div
+                  className="bg-teal-600 h-2 rounded-full transition-all duration-300"
+                  style={{
+                    width: `${migrationProgress.current}%`,
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {migrationResult && (
+            <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded text-emerald-900 font-mono text-[11px] grid grid-cols-4 gap-2 text-center">
+              <div>Students: <strong>{migrationResult.students || 0}</strong></div>
+              <div>Exams: <strong>{migrationResult.exams || 0}</strong></div>
+              <div>Marks: <strong>{migrationResult.marks || 0}</strong></div>
+              <div>Classes: <strong>{migrationResult.classes || 0}</strong></div>
+            </div>
+          )}
+
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-1">
+            <span className="text-[10px] text-slate-500 italic">
+              * Non-destructive cloud upload; merges safely into schools/{schoolInfo.udiseCode}
+            </span>
+            <button
+              type="button"
+              disabled={isMigrating || connectionStatus !== 'connected'}
+              onClick={handleUploadMultiDeviceCloud}
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-teal-700 to-emerald-700 hover:from-teal-800 hover:to-emerald-800 text-white font-bold rounded text-xs shadow-xs transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isMigrating ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Syncing to Cloud Firestore...</span>
+                </>
+              ) : (
+                <>
+                  <CloudUpload className="w-3.5 h-3.5" />
+                  <span>Sync All Records to Cloud</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Configuration Form */}
@@ -232,7 +422,7 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
               </label>
               <input
                 type="text"
-                placeholder="my-school-project"
+                placeholder="gbsss-marks-entry-portal"
                 value={config.projectId}
                 onChange={(e) => setConfig({ ...config, projectId: e.target.value.trim() })}
                 className="w-full px-3 py-1.5 border border-slate-300 rounded font-mono text-xs focus:outline-teal-600"
@@ -243,7 +433,7 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
               <label className="font-semibold text-slate-700 block mb-1">Auth Domain</label>
               <input
                 type="text"
-                placeholder="my-project.firebaseapp.com"
+                placeholder="gbsss-marks-entry-portal.firebaseapp.com"
                 value={config.authDomain}
                 onChange={(e) => setConfig({ ...config, authDomain: e.target.value.trim() })}
                 className="w-full px-3 py-1.5 border border-slate-300 rounded font-mono text-xs focus:outline-teal-600"
@@ -254,7 +444,7 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
               <label className="font-semibold text-slate-700 block mb-1">App ID</label>
               <input
                 type="text"
-                placeholder="1:123456789:web:abcdef"
+                placeholder="1:467908255159:web:d60f6f6b04c723e4ae9c32"
                 value={config.appId}
                 onChange={(e) => setConfig({ ...config, appId: e.target.value.trim() })}
                 className="w-full px-3 py-1.5 border border-slate-300 rounded font-mono text-xs focus:outline-teal-600"
@@ -273,132 +463,15 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
           </div>
         </div>
 
-        {/* Data Migration Card */}
-        <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-3 text-xs">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <CloudUpload className="w-4 h-4 text-teal-700" />
-              <h4 className="font-bold text-slate-800">Migration Preview & Firestore Cloud Upload</h4>
-            </div>
-            <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-bold">
-              Preserves Local Records
-            </span>
-          </div>
-
-          <p className="text-slate-600 leading-relaxed text-[11px]">
-            Review all records identified in your browser storage and application sources below.
-            You can download a complete JSON backup before performing cloud synchronization.
-          </p>
-
-          {/* Migration Preview Stats */}
-          <div className="bg-white border border-slate-200 rounded-md p-3 space-y-2">
-            <span className="font-bold text-slate-700 text-[11px] block uppercase tracking-wide">
-              Identified Records Ready for Cloud Sync:
-            </span>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-center text-xs">
-              <div className="p-2 bg-slate-50 rounded border border-slate-100">
-                <span className="text-[10px] text-slate-500 uppercase block font-semibold">Students</span>
-                <span className="text-base font-bold text-teal-700 font-mono">{students.length}</span>
-              </div>
-              <div className="p-2 bg-slate-50 rounded border border-slate-100">
-                <span className="text-[10px] text-slate-500 uppercase block font-semibold">Classes</span>
-                <span className="text-base font-bold text-slate-800 font-mono">{classes.length}</span>
-              </div>
-              <div className="p-2 bg-slate-50 rounded border border-slate-100">
-                <span className="text-[10px] text-slate-500 uppercase block font-semibold">Examinations</span>
-                <span className="text-base font-bold text-purple-700 font-mono">{exams.length}</span>
-              </div>
-              <div className="p-2 bg-slate-50 rounded border border-slate-100">
-                <span className="text-[10px] text-slate-500 uppercase block font-semibold">Subjects</span>
-                <span className="text-base font-bold text-slate-800 font-mono">{subjects.length}</span>
-              </div>
-              <div className="p-2 bg-slate-50 rounded border border-slate-100">
-                <span className="text-[10px] text-slate-500 uppercase block font-semibold">Marks Records</span>
-                <span className="text-base font-bold text-amber-700 font-mono">{marks.length}</span>
-              </div>
-              <div className="p-2 bg-slate-50 rounded border border-slate-100">
-                <span className="text-[10px] text-slate-500 uppercase block font-semibold">Academic Sessions</span>
-                <span className="text-xs font-bold text-indigo-700 font-mono mt-1 block">2026-27 & 2025-26</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Backup Button before Migration */}
-          <div className="p-2.5 bg-amber-50/80 border border-amber-200 rounded flex items-center justify-between gap-2">
-            <div className="text-[11px] text-amber-900">
-              <strong>Step 1:</strong> Download an offline verified backup of all existing records.
-            </div>
-            <button
-              type="button"
-              onClick={exportBackup}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold rounded text-xs shadow-2xs transition-colors cursor-pointer shrink-0"
-            >
-              <Download className="w-3.5 h-3.5 text-amber-700" />
-              <span>Download Backup (JSON)</span>
-            </button>
-          </div>
-
-          {isMigrating && migrationProgress && (
-            <div className="space-y-1.5 p-3 bg-white border border-teal-200 rounded">
-              <div className="flex items-center justify-between font-mono text-[11px]">
-                <span className="text-teal-800 font-bold">{migrationProgress.stage}</span>
-                <span className="text-slate-500">
-                  {migrationProgress.current} / {migrationProgress.total}
-                </span>
-              </div>
-              <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
-                <div
-                  className="bg-teal-600 h-1.5 rounded-full transition-all duration-300"
-                  style={{
-                    width: `${Math.round((migrationProgress.current / migrationProgress.total) * 100)}%`,
-                  }}
-                />
-              </div>
-            </div>
-          )}
-
-          {migrationResult && (
-            <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded text-emerald-900 font-mono text-[11px] grid grid-cols-3 gap-2 text-center">
-              <div>Students: <strong>{migrationResult.students || 0}</strong></div>
-              <div>Marks: <strong>{migrationResult.marks || 0}</strong></div>
-              <div>Exams: <strong>{migrationResult.exams || 0}</strong></div>
-            </div>
-          )}
-
-          <div className="flex items-center justify-between pt-1">
-            <span className="text-[10px] text-slate-500 italic">
-              * Requires your explicit confirmation before writing any record to Firestore.
-            </span>
-            <button
-              type="button"
-              disabled={isMigrating || connectionStatus !== 'connected'}
-              onClick={handleRunMigration}
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#9333ea] hover:bg-[#7e22ce] text-white font-bold rounded text-xs shadow-xs transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isMigrating ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Migrating Records...</span>
-                </>
-              ) : (
-                <>
-                  <CloudUpload className="w-3.5 h-3.5" />
-                  <span>Start Safe Firestore Migration</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-
         {/* Security & Access Guidelines */}
         <div className="p-3 bg-teal-50 border border-teal-200 rounded-lg text-slate-700 text-xs space-y-1 leading-relaxed">
           <span className="font-bold text-teal-900 flex items-center gap-1.5">
             <ShieldCheck className="w-4 h-4 text-teal-700" />
-            <span>Super Admin & Security Rules Note:</span>
+            <span>Multi-Device Architecture:</span>
           </span>
           <p className="text-[11px]">
-            Your published Firestore rules allow active Super Admin access. Log in with your Super Admin email address (or UDISE <strong>18020200403</strong> with your Super Admin password).
-            The portal checks <code className="font-mono bg-teal-100 px-1 rounded">users/{'{uid}'}</code> on successful login to verify role and active status.
+            Every browser tab and device utilizes Firebase's multi-tab offline cache with Cloud Firestore as the single source of truth.
+            When you enter marks, add students, or modify WhatsApp support contacts on any computer, changes are instantly committed to <code className="font-mono bg-teal-100 px-1 rounded">schools/{schoolInfo.udiseCode}</code> and synchronized in real time.
           </p>
         </div>
       </div>

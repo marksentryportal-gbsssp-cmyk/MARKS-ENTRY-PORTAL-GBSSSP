@@ -24,6 +24,7 @@ export const TopBar: React.FC = () => {
     navigateTo,
     isFirebaseConnected,
     setIsFirebaseModalOpen,
+    cloudSyncStatus,
   } = usePortal();
 
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -40,14 +41,18 @@ export const TopBar: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const formattedSyncTime = cloudSyncStatus.lastSyncedAt
+    ? cloudSyncStatus.lastSyncedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : '';
+
   return (
-    <header className="sticky top-0 z-20 bg-white border-b border-slate-200/90 shadow-xs h-14 md:h-16 px-4 md:px-6 flex items-center justify-between">
+    <header className="sticky top-0 z-20 bg-white border-b border-slate-200/90 shadow-xs h-14 md:h-16 px-3.5 sm:px-4 md:px-5 flex items-center justify-between">
       {/* Left zone: Mobile hamburger & Board Title */}
       <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={() => setIsMobileDrawerOpen(true)}
-          className="md:hidden p-2 rounded-md text-slate-700 hover:text-slate-900 hover:bg-slate-100 transition-colors focus:outline-hidden focus:ring-2 focus:ring-teal-600"
+          className="md:hidden p-2 rounded-md text-slate-700 hover:text-slate-900 hover:bg-slate-100 transition-colors focus:outline-hidden focus:ring-2 focus:ring-teal-600 cursor-pointer"
           aria-label="Open navigation menu"
         >
           <Menu className="w-5 h-5" />
@@ -64,8 +69,8 @@ export const TopBar: React.FC = () => {
         </div>
       </div>
 
-      {/* Right zone: School Code in dark red (#b91c1c), Profile Dropdown, and Logout button */}
-      <div className="flex items-center gap-2 md:gap-4">
+      {/* Right zone: School Code, Live Cloud Status Chip, Profile Dropdown, and Logout button */}
+      <div className="flex items-center gap-2 md:gap-3.5">
         {/* ASSEB School Code badge */}
         <div className="flex items-center gap-1.5 md:gap-2">
           <span className="text-xs text-slate-500 font-medium hidden sm:inline">
@@ -76,19 +81,44 @@ export const TopBar: React.FC = () => {
           </span>
         </div>
 
-        {/* Firebase Cloud Status Button */}
+        {/* Real-time Cloud Firestore Sync Chip */}
         <button
           type="button"
           onClick={() => setIsFirebaseModalOpen(true)}
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border transition-all cursor-pointer shadow-2xs ${
-            isFirebaseConnected
-              ? 'bg-amber-50 hover:bg-amber-100 border-amber-300 text-amber-900'
-              : 'bg-slate-50 hover:bg-slate-100 border-slate-300 text-slate-700'
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border transition-all cursor-pointer shadow-2xs ${
+            cloudSyncStatus.state === 'syncing'
+              ? 'bg-blue-50 border-blue-300 text-blue-900 animate-pulse'
+              : cloudSyncStatus.state === 'offline'
+              ? 'bg-amber-50 border-amber-300 text-amber-900'
+              : cloudSyncStatus.state === 'error'
+              ? 'bg-red-50 border-red-300 text-red-900'
+              : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-900'
           }`}
-          title="Cloud Firestore Database Connection & Data Migration"
+          title="Cloud Firestore Multi-Device Sync & Diagnostics"
         >
-          <Flame className="w-3.5 h-3.5 text-amber-500" />
-          <span className="hidden sm:inline">{isFirebaseConnected ? 'Cloud Live' : 'Connect Cloud'}</span>
+          <span
+            className={`w-2 h-2 rounded-full shrink-0 ${
+              cloudSyncStatus.state === 'syncing'
+                ? 'bg-blue-600 animate-ping'
+                : cloudSyncStatus.state === 'offline'
+                ? 'bg-amber-500'
+                : cloudSyncStatus.state === 'error'
+                ? 'bg-red-500'
+                : 'bg-emerald-600'
+            }`}
+          />
+          <span className="hidden sm:inline">
+            {cloudSyncStatus.state === 'syncing'
+              ? 'Syncing...'
+              : cloudSyncStatus.state === 'offline'
+              ? 'Offline (Cached)'
+              : cloudSyncStatus.state === 'error'
+              ? 'Cloud Error'
+              : formattedSyncTime
+              ? `Synced ${formattedSyncTime}`
+              : 'Synced'}
+          </span>
+          <span className="sm:hidden font-mono text-[10px]">Cloud</span>
         </button>
 
         <div className="h-4 w-px bg-slate-200 hidden sm:block" />

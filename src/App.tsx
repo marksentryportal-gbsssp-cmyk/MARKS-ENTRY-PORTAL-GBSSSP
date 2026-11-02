@@ -121,8 +121,8 @@ const PortalLayout: React.FC = () => {
         {/* Top Bar */}
         <TopBar />
 
-        {/* Page Content Viewport */}
-        <div className="flex-1 p-4 md:p-6 lg:p-8 max-w-7xl w-full mx-auto print:p-0 print:max-w-none">
+        {/* Page Content Viewport - Full-width layout matching reference portal */}
+        <div className="flex-1 w-full min-w-0 px-3 sm:px-4 py-3 sm:py-4 max-w-none print:p-0 print:max-w-none">
           <PortalRouter />
 
           {/* Footer bar on every page */}

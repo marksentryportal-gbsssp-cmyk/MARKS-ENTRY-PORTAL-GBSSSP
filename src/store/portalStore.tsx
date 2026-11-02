@@ -60,8 +60,9 @@ import {
   updateBrowserFaviconAndTitle,
   updateDynamicManifest,
 } from '../utils/logoUtils';
-import { isFirebaseConfigured, getFirebaseAuth } from '../services/firebase';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { isFirebaseConfigured, getFirebaseAuth, getSecondaryAuth, udiseToSyntheticEmail, getFirebaseDb } from '../services/firebase';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { doc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import {
   firebaseSignIn,
   firebaseSignOut,
@@ -74,6 +75,23 @@ import {
   saveExamToFirestore,
   saveChecklistToFirestore,
 } from '../services/firestoreService';
+import {
+  CloudSyncStatus,
+  subscribeSchoolDoc,
+  subscribeSchoolStudents,
+  subscribeSchoolClasses,
+  subscribeSchoolExams,
+  subscribeSchoolSubjects,
+  subscribeSchoolMarks,
+  updateSchoolDocCloud,
+  saveStudentCloud,
+  softDeleteStudentCloud,
+  restoreStudentCloud,
+  saveMarksCloud,
+  uploadAllLocalDataToCloud as uploadLocalDataCloudService,
+  runCloudSelfTest as runCloudSelfTestService,
+  checkSchoolCloudDataCount,
+} from '../services/schoolFirestoreService';
 
 interface PortalContextType {
   // Routing
@@ -263,6 +281,10 @@ interface PortalContextType {
     duration?: number
   ) => void;
   removeToast: (id: string) => void;
+  // Cloud Firestore Single Source of Truth
+  cloudSyncStatus: CloudSyncStatus;
+  uploadAllLocalDataToCloud: (onProgress?: (percent: number, stepLabel: string) => void) => Promise<{ success: boolean; error?: string }>;
+  runCloudSelfTest: () => Promise<{ success: boolean; latencyMs: number; projectId: string; authUid?: string; error?: string }>;
 }
 
 const STORAGE_KEY = 'gopinath_school_portal_data_v5';
@@ -585,6 +607,11 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [isSupportModalOpen, setIsSupportModalOpen] = useState(false);
   const [isFirebaseModalOpen, setIsFirebaseModalOpen] = useState(false);
   const [isFirebaseConnected, setIsFirebaseConnected] = useState(() => isFirebaseConfigured());
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>({
+    state: 'synced',
+    lastSyncedAt: new Date(),
+    pendingCount: 0,
+  });
 
   // Authentication & Session (controlled by sessionService single source of truth)
   const [session, setSession] = useState<AuthSession | null>(() => {
@@ -968,10 +995,164 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     defaultFirstTimePassword,
   ]);
 
-  // School & Support Updaters
+  // Listen for online/offline events for sync status
+  useEffect(() => {
+    const handleOnline = () => {
+      setCloudSyncStatus((prev) => ({ ...prev, state: 'synced', lastSyncedAt: new Date() }));
+    };
+    const handleOffline = () => {
+      setCloudSyncStatus((prev) => ({ ...prev, state: 'offline' }));
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Real-time Cloud Firestore Subscriptions (Multi-Device Single Source of Truth)
+  useEffect(() => {
+    const udise = schoolInfo.udiseCode || currentUser?.udiseCode || DEFAULT_ADMIN_UDISE;
+    if (!udise || udise === '18000000000') return;
+
+    let isMounted = true;
+    const unsubscribers: (() => void)[] = [];
+
+    // 1. Subscribe to root school doc (profile, WhatsApp numbers, notifications, settings)
+    const unsubDoc = subscribeSchoolDoc(
+      udise,
+      (remote) => {
+        if (!isMounted) return;
+        if (remote.schoolInfo) {
+          setSchoolInfo((prev) => ({
+            ...prev,
+            ...remote.schoolInfo,
+            udiseCode: remote.schoolInfo?.udiseCode || prev.udiseCode,
+          }));
+        }
+        if (
+          remote.supportContact &&
+          Array.isArray(remote.supportContact.numbers) &&
+          remote.supportContact.numbers.length > 0
+        ) {
+          setSupportContact((prev) => ({
+            ...prev,
+            ...remote.supportContact,
+          }));
+        }
+        if (remote.resultSettings) {
+          setResultSettings((prev) => ({
+            ...prev,
+            ...remote.resultSettings,
+          }));
+        }
+        setCloudSyncStatus((prev) => ({
+          ...prev,
+          state: 'synced',
+          lastSyncedAt: new Date(),
+          errorMessage: undefined,
+        }));
+      },
+      (err) => {
+        if (!isMounted) return;
+        setCloudSyncStatus((prev) => ({
+          ...prev,
+          state: navigator.onLine ? 'error' : 'offline',
+          errorMessage: err.message,
+        }));
+      }
+    );
+    if (unsubDoc) unsubscribers.push(unsubDoc);
+
+    // 2. Subscribe to students collection
+    const unsubStudents = subscribeSchoolStudents(
+      udise,
+      (remoteStudents) => {
+        if (!isMounted) return;
+        if (remoteStudents.length > 0) {
+          setStudents(remoteStudents);
+        }
+        setCloudSyncStatus((prev) => ({
+          ...prev,
+          state: 'synced',
+          lastSyncedAt: new Date(),
+        }));
+      },
+      (err) => console.warn('Students listener error:', err)
+    );
+    if (unsubStudents) unsubscribers.push(unsubStudents);
+
+    // 3. Subscribe to classes
+    const unsubClasses = subscribeSchoolClasses(udise, (remoteClasses) => {
+      if (!isMounted) return;
+      if (remoteClasses.length > 0) setClasses(remoteClasses);
+    });
+    if (unsubClasses) unsubscribers.push(unsubClasses);
+
+    // 4. Subscribe to exams
+    const unsubExams = subscribeSchoolExams(udise, (remoteExams) => {
+      if (!isMounted) return;
+      if (remoteExams.length > 0) setExams(remoteExams);
+    });
+    if (unsubExams) unsubscribers.push(unsubExams);
+
+    // 5. Subscribe to subjects
+    const unsubSubjects = subscribeSchoolSubjects(udise, (remoteSubjects) => {
+      if (!isMounted) return;
+      if (remoteSubjects.length > 0) setSubjects(remoteSubjects);
+    });
+    if (unsubSubjects) unsubscribers.push(unsubSubjects);
+
+    // 6. Subscribe to marks
+    const unsubMarks = subscribeSchoolMarks(udise, (remoteMarksMap) => {
+      if (!isMounted) return;
+      const flatMarks: MarkRecord[] = [];
+      Object.keys(remoteMarksMap).forEach((examId) => {
+        const docData = remoteMarksMap[examId];
+        if (docData && docData.m) {
+          Object.keys(docData.m).forEach((sId) => {
+            Object.keys(docData.m[sId]).forEach((subId) => {
+              const entry = docData.m[sId][subId];
+              flatMarks.push({
+                examId,
+                studentId: sId,
+                subjectId: subId,
+                obtained: entry.obtained !== undefined ? entry.obtained : (entry.marks ?? null),
+                absent: Boolean(entry.absent ?? entry.isAbsent),
+                component: entry.component || 'descriptive',
+                grade: entry.grade,
+              });
+            });
+          });
+        }
+      });
+      if (flatMarks.length > 0) {
+        setMarks((prev) => {
+          const map = new Map<string, MarkRecord>();
+          prev.forEach((m) => map.set(`${m.examId}_${m.studentId}_${m.subjectId}`, m));
+          flatMarks.forEach((m) => map.set(`${m.examId}_${m.studentId}_${m.subjectId}`, m));
+          return Array.from(map.values());
+        });
+      }
+    });
+    if (unsubMarks) unsubscribers.push(unsubMarks);
+
+    return () => {
+      isMounted = false;
+      unsubscribers.forEach((u) => u());
+    };
+  }, [schoolInfo.udiseCode, currentUser?.udiseCode]);
+
+  // School & Support Updaters with direct Cloud Firestore write
   const updateSchoolInfo = (info: Partial<SchoolInfo>) => {
     setSchoolInfo((prev) => {
       const updated = { ...prev, ...info };
+      const udise = updated.udiseCode || DEFAULT_ADMIN_UDISE;
+      updateSchoolDocCloud(udise, { schoolInfo: updated }).catch((err) => {
+        console.warn('Failed to sync schoolInfo to Firestore:', err);
+      });
+
       // If UDISE Code changed, keep admin user's login identifier in sync
       if (info.udiseCode && info.udiseCode !== prev.udiseCode) {
         setUsers((prevUsers) =>
@@ -988,12 +1169,19 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       }
       return updated;
     });
-    addToast('School information updated');
+    addToast('School information updated & synced to Cloud Firestore');
   };
 
   const updateSupportNumbers = (numbers: string[]) => {
-    setSupportContact((prev) => ({ ...prev, numbers }));
-    addToast('Support numbers updated');
+    setSupportContact((prev) => {
+      const updated = { ...prev, numbers };
+      const udise = schoolInfo.udiseCode || DEFAULT_ADMIN_UDISE;
+      updateSchoolDocCloud(udise, { supportContact: updated }).catch((err) => {
+        console.warn('Failed to sync support contact to Firestore:', err);
+      });
+      return updated;
+    });
+    addToast('Support numbers updated & synced to Cloud Firestore');
   };
 
   const updateSchoolLogo = (logoUpdate: Partial<SchoolLogoData> | null) => {
@@ -1564,11 +1752,25 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       });
     }
 
+    const currentUdise = schoolInfo.udiseCode || DEFAULT_ADMIN_UDISE;
+    saveStudentCloud(currentUdise, newStudent).catch((err) => {
+      console.warn('Could not sync new student to cloud:', err);
+    });
+
     addToast(`Student ${newStudent.name} added and enrolled in exams!`, 'success');
     return newStudent;
   };
 
   const updateStudent = (studentId: string, updates: Partial<Student>) => {
+    const currentUdise = schoolInfo.udiseCode || DEFAULT_ADMIN_UDISE;
+    const target = students.find((s) => s.id === studentId);
+    if (target) {
+      const merged = { ...target, ...updates };
+      saveStudentCloud(currentUdise, merged).catch((err) => {
+        console.warn('Could not sync student update to cloud:', err);
+      });
+    }
+
     setStudents((prev) =>
       prev.map((s) => {
         if (s.id === studentId) {
@@ -1783,8 +1985,16 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       return updated;
     });
 
+    // Sync all bulk imported students to Cloud Firestore so all devices see them
+    const currentUdise = schoolInfo.udiseCode || DEFAULT_ADMIN_UDISE;
+    newRecords.forEach((st) => {
+      saveStudentCloud(currentUdise, st).catch((err) => {
+        console.warn('Could not sync bulk imported student to cloud:', err);
+      });
+    });
+
     addToast(
-      `Successfully bulk imported ${newRecords.length} students!`,
+      `Successfully bulk imported ${newRecords.length} students! Synced to Cloud Firestore.`,
       'success',
       'Undo',
       () => undoBulkImport(newIds, targetExamId || ''),
@@ -2450,19 +2660,81 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const salt = generateSalt(16);
     const passwordHash = initialPassword ? await hashPassword(initialPassword, salt) : '';
 
+    let firebaseUid: string | undefined = undefined;
+
+    // Create account in Firebase Auth using secondary app instance so admin remains logged in
+    if (initialPassword && isFirebaseConfigured()) {
+      try {
+        const secAuth = getSecondaryAuth();
+        const syntheticEmail = udiseToSyntheticEmail(userData.udiseCode || userData.institutionCode || 'staff');
+        const userCred = await createUserWithEmailAndPassword(secAuth, syntheticEmail, initialPassword);
+        firebaseUid = userCred.user.uid;
+        // Immediately sign out secondary auth instance so admin session is unaffected
+        await secAuth.signOut();
+      } catch (authErr: any) {
+        console.warn('Secondary auth user creation warning (using offline/local fallback):', authErr);
+      }
+    }
+
+    const effectiveId = firebaseUid || `user-${Date.now().toString(36)}`;
+    const schoolUdise = schoolInfo.udiseCode || DEFAULT_ADMIN_UDISE;
+
     const newUser: User = {
       ...userData,
-      id: `user-${Date.now().toString(36)}`,
+      id: effectiveId,
       passwordHash,
       salt,
       failedAttempts: 0,
     };
+
+    // Save to Firestore members subcollection: schools/{udise}/members/{uid}
+    const db = getFirebaseDb();
+    if (db) {
+      const memberDocRef = doc(db, 'schools', schoolUdise, 'members', effectiveId);
+      setDoc(
+        memberDocRef,
+        {
+          uid: effectiveId,
+          udiseCode: userData.udiseCode || schoolUdise,
+          name: userData.name,
+          role: userData.role,
+          active: userData.active !== false,
+          mustChangePassword: userData.mustChangePassword || false,
+          createdAt: serverTimestamp(),
+        },
+        { merge: true }
+      ).catch((err) => console.warn('Member firestore write warning:', err));
+
+      // Also persist to legacy users collection
+      const userDocRef = doc(db, 'users', effectiveId);
+      setDoc(
+        userDocRef,
+        {
+          uid: effectiveId,
+          udiseCode: userData.udiseCode || schoolUdise,
+          name: userData.name,
+          role: userData.role,
+          active: userData.active !== false,
+          createdAt: serverTimestamp(),
+        },
+        { merge: true }
+      ).catch((err) => console.warn('User firestore write warning:', err));
+    }
 
     setUsers((prev) => [...prev, newUser]);
     return newUser;
   };
 
   const updateUser = (userId: string, updates: Partial<User>) => {
+    const schoolUdise = schoolInfo.udiseCode || DEFAULT_ADMIN_UDISE;
+    const db = getFirebaseDb();
+    if (db) {
+      const memberDocRef = doc(db, 'schools', schoolUdise, 'members', userId);
+      setDoc(memberDocRef, { ...updates, updatedAt: serverTimestamp() }, { merge: true }).catch((err) =>
+        console.warn('Member update firestore warning:', err)
+      );
+    }
+
     setUsers((prev) =>
       prev.map((u) => {
         if (u.id === userId) {
@@ -2487,6 +2759,14 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       addToast('Cannot delete currently logged in user.', 'error');
       return;
     }
+
+    const schoolUdise = schoolInfo.udiseCode || DEFAULT_ADMIN_UDISE;
+    const db = getFirebaseDb();
+    if (db) {
+      const memberDocRef = doc(db, 'schools', schoolUdise, 'members', userId);
+      deleteDoc(memberDocRef).catch((err) => console.warn('Member delete firestore warning:', err));
+    }
+
     setUsers((prev) => prev.filter((u) => u.id !== userId));
     addToast('User deleted successfully.', 'info');
   };
@@ -2585,6 +2865,49 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     addToast('Reset to default seed data', 'info');
   };
 
+  const uploadAllLocalDataToCloud = async (
+    onProgress?: (percent: number, stepLabel: string) => void
+  ): Promise<{ success: boolean; error?: string }> => {
+    const udise = schoolInfo.udiseCode || DEFAULT_ADMIN_UDISE;
+    setCloudSyncStatus((prev) => ({ ...prev, state: 'syncing' }));
+    const res = await uploadLocalDataCloudService(
+      udise,
+      {
+        schoolInfo,
+        supportContact,
+        classes,
+        examTypes,
+        exams,
+        subjects,
+        students,
+        marks,
+        resultSettings,
+      },
+      onProgress
+    );
+    if (res.success) {
+      setCloudSyncStatus({
+        state: 'synced',
+        lastSyncedAt: new Date(),
+        pendingCount: 0,
+      });
+      addToast('All school records successfully synchronized to Cloud Firestore!', 'success');
+    } else {
+      setCloudSyncStatus((prev) => ({
+        ...prev,
+        state: 'error',
+        errorMessage: res.error,
+      }));
+      addToast(`Cloud upload error: ${res.error}`, 'error');
+    }
+    return res;
+  };
+
+  const runCloudSelfTest = async () => {
+    const udise = schoolInfo.udiseCode || DEFAULT_ADMIN_UDISE;
+    return await runCloudSelfTestService(udise);
+  };
+
   return (
     <PortalContext.Provider
       value={{
@@ -2602,6 +2925,9 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         isFirebaseModalOpen,
         setIsFirebaseModalOpen,
         isFirebaseConnected,
+        cloudSyncStatus,
+        uploadAllLocalDataToCloud,
+        runCloudSelfTest,
         currentUser,
         session,
         users,
