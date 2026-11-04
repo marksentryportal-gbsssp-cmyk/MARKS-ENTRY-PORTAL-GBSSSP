@@ -8,6 +8,8 @@ import {
   persistentMultipleTabManager,
 } from 'firebase/firestore';
 
+import appletConfig from '../../firebase-applet-config.json';
+
 export interface FirebaseWebConfig {
   apiKey: string;
   authDomain: string;
@@ -19,18 +21,21 @@ export interface FirebaseWebConfig {
 }
 
 /**
- * Client-side web configuration for gbsss-marks-entry-portal.
- * Defaults match the active Cloud Firestore project, overridable by VITE_FIREBASE_* env vars.
+ * Client-side web configuration from firebase-applet-config.json.
+ * Overridable by VITE_FIREBASE_* environment variables if present.
  */
 export const firebaseConfig: FirebaseWebConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyCWFd_rk49tGAdkX642Oyda7-WH-3JFtFM',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'gbsss-marks-entry-portal.firebaseapp.com',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'gbsss-marks-entry-portal',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'gbsss-marks-entry-portal.firebasestorage.app',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '467908255159',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:467908255159:web:d60f6f6b04c723e4ae9c32',
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || 'G-P54THCN3FD',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || appletConfig.apiKey || 'AIzaSyCMAHZwtPF_O-qdpcXpPpo7f7Qn7GDt6-A',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || appletConfig.authDomain || 'marks-entry-portal-512313.firebaseapp.com',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || appletConfig.projectId || 'marks-entry-portal-512313',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || appletConfig.storageBucket || 'marks-entry-portal-512313.firebasestorage.app',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || appletConfig.messagingSenderId || '205024505198',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || appletConfig.appId || '1:205024505198:web:4141f07f22ca385073657f',
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || appletConfig.measurementId || '',
 };
+
+export const firestoreDatabaseId: string | undefined =
+  (appletConfig as any).firestoreDatabaseId || undefined;
 
 const CONFIG_STORAGE_KEY = 'gopinath_school_firebase_web_config_v1';
 
@@ -39,9 +44,11 @@ export function getStoredFirebaseConfig(): FirebaseWebConfig {
     const stored = localStorage.getItem(CONFIG_STORAGE_KEY);
     if (stored) {
       const parsed = JSON.parse(stored);
-      if (parsed && parsed.apiKey && parsed.projectId) {
+      if (parsed && parsed.apiKey && parsed.projectId === firebaseConfig.projectId) {
         return parsed;
       }
+      // If cached with an older project id, purge it so the official production project is used
+      localStorage.removeItem(CONFIG_STORAGE_KEY);
     }
   } catch (err) {
     console.warn('Could not read stored Firebase config:', err);
@@ -66,14 +73,18 @@ export const auth: Auth = getAuth(app);
 // 3. Initialize Cloud Firestore with persistent local cache & multi-tab coordination
 let firestoreInstance: Firestore;
 try {
-  firestoreInstance = initializeFirestore(app, {
-    localCache: persistentLocalCache({
-      tabManager: persistentMultipleTabManager(),
-    }),
-  });
+  firestoreInstance = initializeFirestore(
+    app,
+    {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      }),
+    },
+    firestoreDatabaseId
+  );
 } catch {
   // If already initialized in this window/module context
-  firestoreInstance = getFirestore(app);
+  firestoreInstance = firestoreDatabaseId ? getFirestore(app, firestoreDatabaseId) : getFirestore(app);
 }
 
 export const db: Firestore = firestoreInstance;
@@ -99,7 +110,7 @@ export function getSecondaryAuth(): Auth {
  */
 export function udiseToSyntheticEmail(udiseOrId: string): string {
   const clean = udiseOrId.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
-  return `${clean}@gbsss-marks.app`;
+  return `${clean}@marks-portal.app`;
 }
 
 export default app;

@@ -66,6 +66,9 @@ import { doc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import {
   firebaseSignIn,
   firebaseSignOut,
+  provisionInitialSuperAdmin,
+  sendSuperAdminPasswordReset,
+  linkExistingSuperAdminUid,
   saveStudentToFirestore,
   deleteStudentFromFirestore,
   softDeleteStudentInFirestore,
@@ -99,6 +102,10 @@ import {
   subscribeAuthoritativeStudents,
   subscribeAuthoritativeExams,
   subscribeAuthoritativeMarks,
+  subscribeAuthoritativeClasses,
+  subscribeAuthoritativeSubjects,
+  bulkImportStudentsToFirestore,
+  initializeProductionCloudSchema,
   isDemoStudentDataset,
 } from '../services/authoritativeCloudService';
 
@@ -139,6 +146,13 @@ interface PortalContextType {
     password: string,
     keepSignedIn?: boolean
   ) => Promise<{ success: boolean; error?: string; lockedSeconds?: number }>;
+  setupSuperAdminAccount: (
+    password: string
+  ) => Promise<{ success: boolean; error?: string; alreadyExists?: boolean }>;
+  linkSuperAdminUid: (
+    uid: string
+  ) => Promise<{ success: boolean; error?: string; alreadyLinked?: boolean }>;
+  sendSuperAdminResetEmail: () => Promise<{ success: boolean; message: string; error?: string }>;
   logout: () => void;
   changePassword: (
     userId: string,
@@ -292,6 +306,9 @@ interface PortalContextType {
   removeToast: (id: string) => void;
   // Cloud Firestore Single Source of Truth
   cloudSyncStatus: CloudSyncStatus;
+  isCloudDataLoading: boolean;
+  cloudLoadError: string | null;
+  reloadCloudData: () => Promise<void>;
   uploadAllLocalDataToCloud: (onProgress?: (percent: number, stepLabel: string) => void) => Promise<{ success: boolean; error?: string }>;
   runCloudSelfTest: () => Promise<{ success: boolean; latencyMs: number; projectId: string; authUid?: string; error?: string }>;
 }
@@ -621,6 +638,8 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     lastSyncedAt: new Date(),
     pendingCount: 0,
   });
+  const [isCloudDataLoading, setIsCloudDataLoading] = useState<boolean>(false);
+  const [cloudLoadError, setCloudLoadError] = useState<string | null>(null);
 
   // Authentication & Session (controlled by sessionService single source of truth)
   const [session, setSession] = useState<AuthSession | null>(() => {
@@ -952,9 +971,21 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   }, []);
 
-  // Save to LocalStorage
+  // Save to LocalStorage (as temporary offline cache only, never authoritative)
   useEffect(() => {
     try {
+      // SAFETY GUARD: Do NOT overwrite local storage if current state only contains demo records while cache has real data
+      if (isDemoStudentDataset(students)) {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            if (parsed.students && parsed.students.length > 48) {
+              return; // Preserve existing production student records in cache
+            }
+          } catch {}
+        }
+      }
       const payload = {
         classes,
         examTypes,
@@ -1074,13 +1105,27 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     );
     if (unsubDoc) unsubscribers.push(unsubDoc);
 
-    // 2. Subscribe to students collection
-    const unsubStudents = subscribeSchoolStudents(
+    // 2. Authoritative real-time students subscription (dual-path: schools/{udise}/students & /students)
+    const unsubStudents = subscribeAuthoritativeStudents(
       udise,
       (remoteStudents) => {
         if (!isMounted) return;
         if (remoteStudents.length > 0) {
           setStudents(remoteStudents);
+          setExamStudents((prev) => {
+            const map = { ...prev };
+            exams.forEach((exam) => {
+              map[exam.id] = remoteStudents
+                .filter(
+                  (s) =>
+                    s.active !== false &&
+                    !s.deleted &&
+                    (s.classId === exam.classId || s.classId?.toLowerCase() === exam.classId?.toLowerCase())
+                )
+                .map((s) => s.id);
+            });
+            return map;
+          });
         }
         setCloudSyncStatus((prev) => ({
           ...prev,
@@ -1088,7 +1133,7 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           lastSyncedAt: new Date(),
         }));
       },
-      (err) => console.warn('Students listener error:', err)
+      (err) => console.warn('Authoritative students listener warning:', err)
     );
     if (unsubStudents) unsubscribers.push(unsubStudents);
 
@@ -1099,11 +1144,15 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     });
     if (unsubClasses) unsubscribers.push(unsubClasses);
 
-    // 4. Subscribe to exams
-    const unsubExams = subscribeSchoolExams(udise, (remoteExams) => {
-      if (!isMounted) return;
-      if (remoteExams.length > 0) setExams(remoteExams);
-    });
+    // 4. Authoritative real-time exams subscription
+    const unsubExams = subscribeAuthoritativeExams(
+      udise,
+      (remoteExams) => {
+        if (!isMounted) return;
+        if (remoteExams.length > 0) setExams(remoteExams);
+      },
+      (err) => console.warn('Authoritative exams listener warning:', err)
+    );
     if (unsubExams) unsubscribers.push(unsubExams);
 
     // 5. Subscribe to subjects
@@ -1113,45 +1162,158 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     });
     if (unsubSubjects) unsubscribers.push(unsubSubjects);
 
-    // 6. Subscribe to marks
-    const unsubMarks = subscribeSchoolMarks(udise, (remoteMarksMap) => {
-      if (!isMounted) return;
-      const flatMarks: MarkRecord[] = [];
-      Object.keys(remoteMarksMap).forEach((examId) => {
-        const docData = remoteMarksMap[examId];
-        if (docData && docData.m) {
-          Object.keys(docData.m).forEach((sId) => {
-            Object.keys(docData.m[sId]).forEach((subId) => {
-              const entry = docData.m[sId][subId];
-              flatMarks.push({
-                examId,
-                studentId: sId,
-                subjectId: subId,
-                obtained: entry.obtained !== undefined ? entry.obtained : (entry.marks ?? null),
-                absent: Boolean(entry.absent ?? entry.isAbsent),
-                component: entry.component || 'descriptive',
-                grade: entry.grade,
-              });
-            });
+    // 6. Authoritative real-time marks subscription
+    const unsubMarks = subscribeAuthoritativeMarks(
+      udise,
+      (remoteMarks) => {
+        if (!isMounted) return;
+        if (remoteMarks.length > 0) {
+          setMarks((prev) => {
+            const map = new Map<string, MarkRecord>();
+            prev.forEach((m) => map.set(`${m.examId}_${m.studentId}_${m.subjectId}_${m.component || 'desc'}`, m));
+            remoteMarks.forEach((m) => map.set(`${m.examId}_${m.studentId}_${m.subjectId}_${m.component || 'desc'}`, m));
+            return Array.from(map.values());
           });
         }
-      });
-      if (flatMarks.length > 0) {
-        setMarks((prev) => {
-          const map = new Map<string, MarkRecord>();
-          prev.forEach((m) => map.set(`${m.examId}_${m.studentId}_${m.subjectId}`, m));
-          flatMarks.forEach((m) => map.set(`${m.examId}_${m.studentId}_${m.subjectId}`, m));
-          return Array.from(map.values());
-        });
-      }
-    });
+      },
+      (err) => console.warn('Authoritative marks listener warning:', err)
+    );
     if (unsubMarks) unsubscribers.push(unsubMarks);
 
     return () => {
       isMounted = false;
       unsubscribers.forEach((u) => u());
     };
-  }, [schoolInfo.udiseCode, currentUser?.udiseCode]);
+  }, [schoolInfo.udiseCode, currentUser?.udiseCode, exams]);
+
+  // Helper to dynamically index all students into their respective class's exams
+  const rebuildExamIndices = (
+    currentStudents: Student[],
+    currentExams: ExamRecord[],
+    currentMarks: MarkRecord[]
+  ) => {
+    const newExamStudents: Record<string, string[]> = {};
+    const newMarksStatus: Record<string, MarksStatus> = {};
+
+    const marksByStudentExam = new Set<string>();
+    currentMarks.forEach((m) => {
+      if (m.obtained !== null || m.absent) {
+        marksByStudentExam.add(`${m.examId}_${m.studentId}`);
+      }
+    });
+
+    currentExams.forEach((exam) => {
+      const enrolled = currentStudents
+        .filter(
+          (s) =>
+            s.active !== false &&
+            !s.deleted &&
+            (s.classId === exam.classId || s.classId?.toLowerCase() === exam.classId?.toLowerCase())
+        )
+        .map((s) => s.id);
+
+      newExamStudents[exam.id] = enrolled;
+
+      enrolled.forEach((sId) => {
+        const key = `${exam.id}_${sId}`;
+        if (exam.isFinalSubmitted) {
+          newMarksStatus[key] = 'completed';
+        } else if (marksByStudentExam.has(key)) {
+          newMarksStatus[key] = 'completed';
+        } else {
+          newMarksStatus[key] = 'not_completed';
+        }
+      });
+    });
+
+    return { newExamStudents, newMarksStatus };
+  };
+
+  // Authoritative cloud data hydration
+  const applyAuthoritativeCloudData = useCallback(
+    (cloudData: {
+      students: Student[];
+      exams: ExamRecord[];
+      classes: ClassInfo[];
+      subjects: Subject[];
+      marks: MarkRecord[];
+      schoolInfo?: Partial<SchoolInfo>;
+      supportContact?: Partial<SupportContact>;
+      resultSettings?: Partial<ResultSettings>;
+    }) => {
+      if (cloudData.students && cloudData.students.length > 0) {
+        setStudents(cloudData.students);
+      }
+      if (cloudData.exams && cloudData.exams.length > 0) {
+        setExams(cloudData.exams);
+      }
+      if (cloudData.classes && cloudData.classes.length > 0) {
+        setClasses(cloudData.classes);
+      }
+      if (cloudData.subjects && cloudData.subjects.length > 0) {
+        setSubjects(cloudData.subjects);
+      }
+      if (cloudData.marks && cloudData.marks.length > 0) {
+        setMarks(cloudData.marks);
+      }
+      if (cloudData.schoolInfo) {
+        setSchoolInfo((prev) => ({
+          ...prev,
+          ...cloudData.schoolInfo,
+          udiseCode: cloudData.schoolInfo?.udiseCode || prev.udiseCode,
+        }));
+      }
+      if (cloudData.supportContact?.numbers && cloudData.supportContact.numbers.length > 0) {
+        setSupportContact((prev) => ({ ...prev, ...cloudData.supportContact }));
+      }
+      if (cloudData.resultSettings) {
+        setResultSettings((prev) => ({ ...prev, ...cloudData.resultSettings }));
+      }
+
+      const activeStus = cloudData.students && cloudData.students.length > 0 ? cloudData.students : students;
+      const activeExs = cloudData.exams && cloudData.exams.length > 0 ? cloudData.exams : exams;
+      const activeMks = cloudData.marks && cloudData.marks.length > 0 ? cloudData.marks : marks;
+
+      const { newExamStudents, newMarksStatus } = rebuildExamIndices(activeStus, activeExs, activeMks);
+      setExamStudents((prev) => ({ ...prev, ...newExamStudents }));
+      setMarksStatus((prev) => ({ ...prev, ...newMarksStatus }));
+
+      setCloudSyncStatus({
+        state: 'synced',
+        lastSyncedAt: new Date(),
+        pendingCount: 0,
+      });
+    },
+    [students, exams, marks]
+  );
+
+  const reloadCloudData = useCallback(async () => {
+    const udise = schoolInfo.udiseCode || currentUser?.udiseCode || DEFAULT_ADMIN_UDISE;
+    if (!udise || udise === '18000000000') return;
+
+    setIsCloudDataLoading(true);
+    setCloudLoadError(null);
+    try {
+      const cloudData = await loadAuthoritativeCloudData(udise);
+      if (cloudData.success && cloudData.hasData) {
+        applyAuthoritativeCloudData(cloudData);
+      } else if (!cloudData.success) {
+        setCloudLoadError(cloudData.error || 'Failed to fetch cloud records');
+      }
+    } catch (err: any) {
+      console.warn('reloadCloudData warning:', err);
+      setCloudLoadError(err?.message || 'Error communicating with Firestore');
+    } finally {
+      setIsCloudDataLoading(false);
+    }
+  }, [schoolInfo.udiseCode, currentUser?.udiseCode, applyAuthoritativeCloudData]);
+
+  // Initial and session-based startup fetch
+  useEffect(() => {
+    if (currentUser) {
+      reloadCloudData();
+    }
+  }, [currentUser?.id, reloadCloudData]);
 
   // School & Support Updaters with direct Cloud Firestore write
   const updateSchoolInfo = (info: Partial<SchoolInfo>) => {
@@ -1352,6 +1514,12 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     if (newExams.length > 0) {
       setExams((prev) => [...prev, ...newExams]);
       setExamStudents((prev) => ({ ...prev, ...newExamStudentsMap }));
+      const currentUdise = schoolInfo.udiseCode || DEFAULT_ADMIN_UDISE;
+      newExams.forEach((ex) => {
+        syncRecordToFirestoreAuthoritative(currentUdise, 'exam', ex).catch((err) => {
+          console.warn('Could not sync exam to cloud:', err);
+        });
+      });
     }
 
     if (createdCount > 0) {
@@ -1364,15 +1532,28 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   };
 
   const updateExam = (id: string, updates: Partial<ExamRecord>) => {
+    const currentUdise = schoolInfo.udiseCode || DEFAULT_ADMIN_UDISE;
+    const existing = exams.find((ex) => ex.id === id);
+    if (existing) {
+      syncRecordToFirestoreAuthoritative(currentUdise, 'exam', { ...existing, ...updates }).catch((err) => {
+        console.warn('Could not sync exam update to cloud:', err);
+      });
+    }
     setExams((prev) =>
       prev.map((ex) => (ex.id === id ? { ...ex, ...updates } : ex))
     );
-    addToast('Exam record updated');
+    addToast('Exam record updated & synced to Cloud Firestore');
   };
 
   const deleteExam = (id: string) => {
+    const currentUdise = schoolInfo.udiseCode || DEFAULT_ADMIN_UDISE;
+    const db = getFirebaseDb();
+    if (db) {
+      deleteDoc(doc(db, 'schools', currentUdise, 'exams', id)).catch(() => {});
+      deleteDoc(doc(db, 'examinations', id)).catch(() => {});
+    }
     setExams((prev) => prev.filter((ex) => ex.id !== id));
-    addToast('Exam deleted', 'info');
+    addToast('Exam deleted & synced to Cloud Firestore', 'info');
   };
 
   const toggleExamFinalSubmit = (id: string) => {
@@ -1669,14 +1850,25 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const exam = exams.find((e) => e.id === examId);
     if (!exam) return [];
 
-    let enrolledIds = examStudents[examId];
+    const enrolledIds = examStudents[examId];
     let list: Student[] = [];
-    if (!enrolledIds) {
-      list = students.filter((s) => s.classId === exam.classId && s.active && !s.deleted);
+    if (!enrolledIds || enrolledIds.length === 0) {
+      list = students.filter(
+        (s) =>
+          (s.classId === exam.classId || s.classId?.toLowerCase() === exam.classId?.toLowerCase()) &&
+          s.active !== false &&
+          !s.deleted
+      );
     } else {
-      list = enrolledIds
-        .map((id) => students.find((s) => s.id === id))
-        .filter((s): s is Student => Boolean(s && s.active && !s.deleted));
+      const enrolledSet = new Set(enrolledIds);
+      list = students.filter(
+        (s) =>
+          (enrolledSet.has(s.id) ||
+            s.classId === exam.classId ||
+            s.classId?.toLowerCase() === exam.classId?.toLowerCase()) &&
+          s.active !== false &&
+          !s.deleted
+      );
     }
     return sortByRollNo(list);
   };
@@ -1762,7 +1954,7 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
 
     const currentUdise = schoolInfo.udiseCode || DEFAULT_ADMIN_UDISE;
-    saveStudentCloud(currentUdise, newStudent).catch((err) => {
+    syncRecordToFirestoreAuthoritative(currentUdise, 'student', newStudent).catch((err) => {
       console.warn('Could not sync new student to cloud:', err);
     });
 
@@ -1775,7 +1967,7 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const target = students.find((s) => s.id === studentId);
     if (target) {
       const merged = { ...target, ...updates };
-      saveStudentCloud(currentUdise, merged).catch((err) => {
+      syncRecordToFirestoreAuthoritative(currentUdise, 'student', merged).catch((err) => {
         console.warn('Could not sync student update to cloud:', err);
       });
     }
@@ -1994,12 +2186,10 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       return updated;
     });
 
-    // Sync all bulk imported students to Cloud Firestore so all devices see them
+    // Safe batched sync to Cloud Firestore in chunks of 200 (400 dual writes)
     const currentUdise = schoolInfo.udiseCode || DEFAULT_ADMIN_UDISE;
-    newRecords.forEach((st) => {
-      saveStudentCloud(currentUdise, st).catch((err) => {
-        console.warn('Could not sync bulk imported student to cloud:', err);
-      });
+    bulkImportStudentsToFirestore(currentUdise, newRecords).catch((err) => {
+      console.warn('Could not batch sync bulk imported students to cloud:', err);
     });
 
     addToast(
@@ -2052,7 +2242,19 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       marksList.forEach((m) => map.set(`${m.examId}_${m.studentId}_${m.subjectId}_${m.component || 'desc'}`, m));
       return Array.from(map.values());
     });
-    addToast('Marks updated successfully', 'success');
+    const currentUdise = schoolInfo.udiseCode || DEFAULT_ADMIN_UDISE;
+    const byExam: Record<string, MarkRecord[]> = {};
+    marksList.forEach((m) => {
+      if (!byExam[m.examId]) byExam[m.examId] = [];
+      byExam[m.examId].push(m);
+    });
+    Object.entries(byExam).forEach(([eId, list]) => {
+      syncRecordToFirestoreAuthoritative(currentUdise, 'mark', { examId: eId, marks: list }).catch((err) => {
+        console.warn('Could not sync marks batch to cloud:', err);
+      });
+    });
+
+    addToast('Marks updated & synced to Cloud Firestore', 'success');
   };
 
   // -------------------------------------------------------------
@@ -2203,6 +2405,15 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         })
       );
     }
+
+    // 8. Authoritative Cloud Firestore write
+    const currentUdise = schoolInfo.udiseCode || DEFAULT_ADMIN_UDISE;
+    syncRecordToFirestoreAuthoritative(currentUdise, 'mark', {
+      examId,
+      marks: newMarks,
+    }).catch((err) => {
+      console.warn('Could not sync candidate marks to cloud:', err);
+    });
   };
 
   const markStudentAbsentAll = (examId: string, studentId: string, classSubjects: Subject[]) => {
@@ -2284,9 +2495,14 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const student = students.find((s) => s.id === studentId);
     const actorName = currentUser?.name || currentUser?.udiseCode || 'Super Admin';
 
+    const currentUdise = schoolInfo.udiseCode || DEFAULT_ADMIN_UDISE;
+
     if (mode === 'soft') {
-      // 1. Update Cloud Firestore first to guarantee cloud persistence
+      // 1. Update Cloud Firestore first to guarantee cloud persistence across both collections
       const fbRes = await softDeleteStudentInFirestore(studentId, actorName, reason);
+      if (student) {
+        softDeleteStudentCloud(currentUdise, student, actorName, reason || 'Soft deleted via Portal').catch(() => {});
+      }
       if (!fbRes.success) {
         addToast(`Cloud deletion failed: ${fbRes.error || 'Permission denied'}. The student was not deleted.`, 'error');
         return { success: false, marksCount, error: fbRes.error };
@@ -2325,8 +2541,12 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       addToast(`Student "${student?.name}" moved to Recycle Bin (Cloud Synced). All historical marks preserved.`, 'success');
       return { success: true, marksCount };
     } else {
-      // Hard delete mode
+      // Hard delete mode across both collections
       const fbRes = await deleteStudentFromFirestore(studentId);
+      const db = getFirebaseDb();
+      if (db) {
+        deleteDoc(doc(db, 'schools', currentUdise, 'students', studentId)).catch(() => {});
+      }
       if (!fbRes.success) {
         addToast(`Cloud permanent deletion failed: ${fbRes.error || 'Permission denied'}.`, 'error');
         return { success: false, marksCount, error: fbRes.error };
@@ -2363,9 +2583,11 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const restoreStudent = async (studentId: string): Promise<{ success: boolean; error?: string }> => {
     const student = students.find((s) => s.id === studentId);
     const actorName = currentUser?.name || currentUser?.udiseCode || 'Super Admin';
+    const currentUdise = schoolInfo.udiseCode || DEFAULT_ADMIN_UDISE;
 
-    // 1. Write to Cloud Firestore first
+    // 1. Write to Cloud Firestore first across both collections
     const fbRes = await restoreStudentInFirestore(studentId, actorName);
+    restoreStudentCloud(currentUdise, studentId).catch(() => {});
     if (!fbRes.success) {
       addToast(`Cloud restoration failed: ${fbRes.error || 'Permission denied'}.`, 'error');
       return { success: false, error: fbRes.error };
@@ -2512,6 +2734,29 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       };
       setAuthAuditLogs((prev) => [logEntry, ...prev.slice(0, 99)]);
 
+      // Authoritative Cloud Data Loading right after successful Firebase authentication
+      setIsCloudDataLoading(true);
+      setCloudLoadError(null);
+      try {
+        const cloudData = await loadAuthoritativeCloudData(mappedUser.udiseCode);
+        if (cloudData.success && cloudData.hasData) {
+          applyAuthoritativeCloudData(cloudData);
+        } else if (cloudData.success && !cloudData.hasData) {
+          // New production project database initialized: bootstrap base schema without fake students
+          await initializeProductionCloudSchema(mappedUser.udiseCode);
+          const freshData = await loadAuthoritativeCloudData(mappedUser.udiseCode);
+          if (freshData.success && freshData.hasData) {
+            applyAuthoritativeCloudData(freshData);
+          }
+        } else if (!cloudData.success) {
+          console.warn('Post-login cloud fetch error:', cloudData.error);
+        }
+      } catch (cloudErr: any) {
+        console.warn('Post-login authoritative fetch warning:', cloudErr);
+      } finally {
+        setIsCloudDataLoading(false);
+      }
+
       return { success: true };
     } catch (err: any) {
       console.error('Firebase Login Error:', err);
@@ -2520,6 +2765,190 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         error: err?.message || 'Authentication failed. Please check your credentials.',
       };
     }
+  };
+
+  const setupSuperAdminAccount = async (
+    password: string
+  ): Promise<{ success: boolean; error?: string; alreadyExists?: boolean }> => {
+    try {
+      const res = await provisionInitialSuperAdmin(password);
+      if (!res.success) {
+        return {
+          success: false,
+          error: res.error,
+          alreadyExists: res.alreadyExists,
+        };
+      }
+
+      if (!res.user) {
+        return { success: false, error: 'Failed to provision Super Admin profile' };
+      }
+
+      const fbUser = res.user;
+      const mappedUser: User = {
+        id: res.firebaseUid || fbUser.uid,
+        udiseCode: fbUser.udiseCode || '18020200403',
+        name: 'Super Administrator',
+        role: 'admin',
+        mustChangePassword: false,
+        failedAttempts: 0,
+        lockedUntil: null,
+        lastLoginAt: new Date().toISOString(),
+        active: true,
+        passwordHash: '',
+        salt: '',
+      };
+
+      setUsers((prev) => {
+        const idx = prev.findIndex((u) => u.id === mappedUser.id || u.udiseCode === mappedUser.udiseCode);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = { ...updated[idx], ...mappedUser };
+          return updated;
+        }
+        return [mappedUser, ...prev];
+      });
+
+      setCurrentUser(mappedUser);
+
+      const v1Session = startSession(
+        {
+          id: mappedUser.id,
+          udiseCode: mappedUser.udiseCode,
+          role: mappedUser.role,
+          name: mappedUser.name,
+        },
+        true
+      );
+
+      const newSession: AuthSession = {
+        userId: mappedUser.id,
+        user: mappedUser,
+        token: v1Session.sessionId,
+        expiresAt: v1Session.expiresAt,
+        keepSignedIn: true,
+        lastActivityAt: new Date().toISOString(),
+      };
+      setSession(newSession);
+
+      // Initialize base schema if not present
+      await initializeProductionCloudSchema(mappedUser.udiseCode);
+      const freshData = await loadAuthoritativeCloudData(mappedUser.udiseCode);
+      if (freshData.success && freshData.hasData) {
+        applyAuthoritativeCloudData(freshData);
+      }
+
+      const logEntry: AuthAuditLog = {
+        id: `log-${Date.now()}`,
+        type: 'login_success',
+        udiseCode: mappedUser.udiseCode,
+        userName: mappedUser.name,
+        timestamp: new Date().toISOString(),
+        details: 'Initial Super Admin account provisioned and signed in via Firebase',
+      };
+      setAuthAuditLogs((prev) => [logEntry, ...prev.slice(0, 99)]);
+
+      addToast('Super Admin account created successfully! Signed in.', 'success');
+      return { success: true };
+    } catch (err: any) {
+      console.error('setupSuperAdminAccount error:', err);
+      return {
+        success: false,
+        error: err?.message || 'Failed to setup Super Admin account',
+      };
+    }
+  };
+
+  const linkSuperAdminUid = async (
+    targetUid: string
+  ): Promise<{ success: boolean; error?: string; alreadyLinked?: boolean }> => {
+    try {
+      const res = await linkExistingSuperAdminUid(targetUid);
+      if (!res.success) {
+        return { success: false, error: res.error };
+      }
+
+      if (!res.user) {
+        return { success: false, error: 'User profile not generated' };
+      }
+
+      const fbUser = res.user;
+      const mappedUser: User = {
+        id: fbUser.uid,
+        udiseCode: fbUser.udiseCode || '18020200403',
+        name: 'Super Administrator',
+        role: 'admin',
+        mustChangePassword: false,
+        failedAttempts: 0,
+        lockedUntil: null,
+        lastLoginAt: new Date().toISOString(),
+        active: true,
+        passwordHash: '',
+        salt: '',
+      };
+
+      setUsers((prev) => {
+        const idx = prev.findIndex((u) => u.id === mappedUser.id || u.udiseCode === mappedUser.udiseCode);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = { ...updated[idx], ...mappedUser };
+          return updated;
+        }
+        return [mappedUser, ...prev];
+      });
+
+      setCurrentUser(mappedUser);
+
+      const v1Session = startSession(
+        {
+          id: mappedUser.id,
+          udiseCode: mappedUser.udiseCode,
+          role: mappedUser.role,
+          name: mappedUser.name,
+        },
+        true
+      );
+
+      const newSession: AuthSession = {
+        userId: mappedUser.id,
+        user: mappedUser,
+        token: v1Session.sessionId,
+        expiresAt: v1Session.expiresAt,
+        keepSignedIn: true,
+        lastActivityAt: new Date().toISOString(),
+      };
+      setSession(newSession);
+
+      // Initialize base schema if needed
+      await initializeProductionCloudSchema(mappedUser.udiseCode);
+      const freshData = await loadAuthoritativeCloudData(mappedUser.udiseCode);
+      if (freshData.success && freshData.hasData) {
+        applyAuthoritativeCloudData(freshData);
+      }
+
+      const logEntry: AuthAuditLog = {
+        id: `log-${Date.now()}`,
+        type: 'login_success',
+        udiseCode: mappedUser.udiseCode,
+        userName: mappedUser.name,
+        timestamp: new Date().toISOString(),
+        details: `Linked existing Firebase Auth UID (${targetUid.trim()}) to Super Admin profile`,
+      };
+      setAuthAuditLogs((prev) => [logEntry, ...prev.slice(0, 99)]);
+
+      addToast('Super Admin UID linked and activated in Cloud Firestore!', 'success');
+      return { success: true, alreadyLinked: res.alreadyLinked };
+    } catch (err: any) {
+      console.error('linkSuperAdminUid error:', err);
+      return {
+        success: false,
+        error: err?.message || 'Failed to link Super Admin UID',
+      };
+    }
+  };
+
+  const sendSuperAdminResetEmail = async () => {
+    return await sendSuperAdminPasswordReset();
   };
 
   const logout = () => {
@@ -2935,6 +3364,9 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         setIsFirebaseModalOpen,
         isFirebaseConnected,
         cloudSyncStatus,
+        isCloudDataLoading,
+        cloudLoadError,
+        reloadCloudData,
         uploadAllLocalDataToCloud,
         runCloudSelfTest,
         currentUser,
@@ -2950,6 +3382,9 @@ export const PortalProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         isForcedPasswordChange,
         setIsForcedPasswordChange,
         login,
+        setupSuperAdminAccount,
+        linkSuperAdminUid,
+        sendSuperAdminResetEmail,
         logout,
         changePassword,
         resetUserPassword,

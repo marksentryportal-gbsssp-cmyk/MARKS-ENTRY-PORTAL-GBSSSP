@@ -572,7 +572,7 @@ export async function runCloudSelfTest(udise: string): Promise<{
     return {
       success: false,
       latencyMs: 0,
-      projectId: 'gbsss-marks-entry-portal',
+      projectId: 'marks-entry-portal-512313',
       error: 'Firestore client not initialized',
     };
   }
@@ -595,14 +595,14 @@ export async function runCloudSelfTest(udise: string): Promise<{
       return {
         success: true,
         latencyMs,
-        projectId: 'gbsss-marks-entry-portal',
+        projectId: 'marks-entry-portal-512313',
         authUid: uid,
       };
     } else {
       return {
         success: false,
         latencyMs,
-        projectId: 'gbsss-marks-entry-portal',
+        projectId: 'marks-entry-portal-512313',
         error: 'Test document was written but could not be read back.',
       };
     }
@@ -611,7 +611,7 @@ export async function runCloudSelfTest(udise: string): Promise<{
     return {
       success: false,
       latencyMs,
-      projectId: 'gbsss-marks-entry-portal',
+      projectId: 'marks-entry-portal-512313',
       authUid: uid,
       error: err?.message || String(err),
     };

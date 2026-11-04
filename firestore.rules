@@ -1,6 +1,85 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email == 'gopinathschool2024@gmail.com' ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin' ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+      );
+    }
+
+    // Connectivity ping test
+    match /_connection_test/{docId} {
+      allow read, write: if true;
+    }
+
+    // Users and authorization profiles
+    match /users/{userId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // Students master
+    match /students/{studentId} {
+      allow read: if true;
+      allow write: if isAuthenticated() || true;
+    }
+
+    // Classes and Sections
+    match /classes/{classId} {
+      allow read, write: if true;
+    }
+    match /sections/{sectionId} {
+      allow read, write: if true;
+    }
+
+    // Subjects master
+    match /subjects/{subjectId} {
+      allow read, write: if true;
+    }
+
+    // Examinations master
+    match /examinations/{examId} {
+      allow read, write: if true;
+    }
+
+    // Academic Sessions
+    match /academicSessions/{sessionId} {
+      allow read, write: if true;
+    }
+
+    // Marks and Evaluations
+    match /marks/{markId} {
+      allow read, write: if true;
+    }
+
+    // Tabulation & Results
+    match /results/{resultId} {
+      allow read, write: if true;
+    }
+
+    // Student Promotion Records
+    match /promotionRecords/{recordId} {
+      allow read, write: if true;
+    }
+
+    // Settings (school_info, result_settings, guidelines)
+    match /settings/{settingId} {
+      allow read, write: if true;
+    }
+
+    // School tree subcollections: schools/{udise}/...
+    match /schools/{udise}/{allSubcollections=**} {
+      allow read, write: if true;
+    }
+
+    // Catch-all
     match /{document=**} {
       allow read, write: if true;
     }

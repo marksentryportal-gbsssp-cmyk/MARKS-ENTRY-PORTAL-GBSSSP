@@ -16,9 +16,11 @@ import {
 import {
   signInWithEmailAndPassword,
   signOut,
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
   User as FirebaseUser,
 } from 'firebase/auth';
-import { getFirebaseAuth, getFirebaseDb } from './firebase';
+import { getFirebaseAuth, getFirebaseDb, udiseToSyntheticEmail } from './firebase';
 import {
   Student,
   ExamRecord,
@@ -115,7 +117,7 @@ export async function firebaseSignIn(
     if (email === '18020200403') {
       email = 'gopinathschool2024@gmail.com';
     } else {
-      email = `${email}@gopinathschool.assam.gov.in`;
+      email = udiseToSyntheticEmail(email);
     }
   }
 
@@ -133,6 +135,24 @@ export async function firebaseSignIn(
     }
 
     if (!userSnap.exists()) {
+      if (cred.user.email === 'gopinathschool2024@gmail.com') {
+        const superAdminProfile: FirestoreUserProfile = {
+          uid,
+          email: 'gopinathschool2024@gmail.com',
+          role: 'super_admin',
+          name: 'Super Administrator',
+          active: true,
+          udiseCode: '18020200403',
+        };
+        await setDoc(userDocRef, { ...superAdminProfile, createdAt: serverTimestamp(), lastLoginAt: serverTimestamp() }, { merge: true });
+        await setDoc(doc(db, 'schools', '18020200403', 'members', uid), { ...superAdminProfile, createdAt: serverTimestamp() }, { merge: true });
+        return {
+          success: true,
+          user: superAdminProfile,
+          firebaseUid: uid,
+        };
+      }
+
       return {
         success: false,
         error: `Authorized user record not found in Firestore for UID ${uid}. Please ensure users/{uid} document is created.`,
@@ -185,6 +205,219 @@ export async function firebaseSignOut(): Promise<void> {
     } catch (err) {
       console.warn('Firebase sign out error:', err);
     }
+  }
+}
+
+/**
+ * Securely provisions the initial Super Admin account using Firebase Authentication.
+ * If the account does not exist in Firebase Auth, creates it with the user-provided password.
+ * Links the Firestore user profile in users/{uid} with role 'super_admin'.
+ * Never stores plain passwords in Firestore or source code.
+ */
+export async function provisionInitialSuperAdmin(
+  password: string
+): Promise<{ success: boolean; user?: FirestoreUserProfile; firebaseUid?: string; error?: string; alreadyExists?: boolean }> {
+  const auth = getFirebaseAuth();
+  const db = getFirebaseDb();
+
+  if (!auth || !db) {
+    return {
+      success: false,
+      error: 'Firebase is not initialized. Please verify configuration.',
+    };
+  }
+
+  const superAdminEmail = 'gopinathschool2024@gmail.com';
+  const udise = '18020200403';
+
+  try {
+    let uid: string;
+
+    try {
+      // 1. Attempt to create user with email & password in Firebase Auth
+      const cred = await createUserWithEmailAndPassword(auth, superAdminEmail, password);
+      uid = cred.user.uid;
+    } catch (createErr: any) {
+      if (createErr?.code === 'auth/email-already-in-use') {
+        // The account already exists in Firebase Auth! Attempt sign-in with the provided password
+        try {
+          const signInCred = await signInWithEmailAndPassword(auth, superAdminEmail, password);
+          uid = signInCred.user.uid;
+        } catch (signInErr: any) {
+          return {
+            success: false,
+            alreadyExists: true,
+            error: 'Super Admin account already exists in Firebase Authentication. If you forgot the password, please use Forgot Password or the reset link.',
+          };
+        }
+      } else {
+        throw createErr;
+      }
+    }
+
+    // 2. Provision or update profile in Firestore: users/{uid}
+    const superAdminProfile: FirestoreUserProfile = {
+      uid,
+      email: superAdminEmail,
+      role: 'super_admin',
+      name: 'Super Administrator',
+      active: true,
+      udiseCode: udise,
+    };
+
+    const userDocRef = doc(db, 'users', uid);
+    await setDoc(
+      userDocRef,
+      {
+        ...superAdminProfile,
+        createdAt: serverTimestamp(),
+        lastLoginAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    // Also link under schools/{udise}/members/{uid}
+    const memberDocRef = doc(db, 'schools', udise, 'members', uid);
+    await setDoc(
+      memberDocRef,
+      {
+        ...superAdminProfile,
+        createdAt: serverTimestamp(),
+        lastLoginAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    return {
+      success: true,
+      user: superAdminProfile,
+      firebaseUid: uid,
+    };
+  } catch (err: any) {
+    console.error('provisionInitialSuperAdmin error:', err);
+    let message = err?.message || 'Provisioning failed';
+    if (err?.code === 'auth/weak-password') {
+      message = 'Password is too weak. Please use at least 8 characters with letters and numbers.';
+    }
+    return {
+      success: false,
+      error: message,
+    };
+  }
+}
+
+/**
+ * Sends a password reset email directly to the Super Admin email via Firebase Auth
+ */
+export async function sendSuperAdminPasswordReset(): Promise<{ success: boolean; message: string; error?: string }> {
+  const auth = getFirebaseAuth();
+  if (!auth) {
+    return { success: false, message: 'Firebase Auth is not initialized', error: 'No Auth instance' };
+  }
+  try {
+    await sendPasswordResetEmail(auth, 'gopinathschool2024@gmail.com');
+    return {
+      success: true,
+      message: 'Password reset link sent to gopinathschool2024@gmail.com. Please check your inbox or spam folder.',
+    };
+  } catch (err: any) {
+    console.error('sendSuperAdminPasswordReset error:', err);
+    return {
+      success: false,
+      message: err?.message || 'Could not send reset email',
+      error: err?.message,
+    };
+  }
+}
+
+/**
+ * Links an existing Firebase Authentication UID directly to the Super Admin profile in Firestore
+ * under users/{uid} and schools/18020200403/members/{uid}.
+ * Does not overwrite existing user documents if they already have super_admin set.
+ * Sets role to 'super_admin', status to 'active', and grants full administrative permissions.
+ * Never stores plain passwords in Firestore or code.
+ */
+export async function linkExistingSuperAdminUid(
+  targetUid: string
+): Promise<{ success: boolean; user?: FirestoreUserProfile; error?: string; alreadyLinked?: boolean }> {
+  const db = getFirebaseDb();
+  if (!db) {
+    return { success: false, error: 'Cloud Firestore is not initialized' };
+  }
+
+  const cleanUid = targetUid.trim();
+  if (!cleanUid) {
+    return { success: false, error: 'Please enter a valid Firebase Authentication UID' };
+  }
+
+  const superAdminEmail = 'gopinathschool2024@gmail.com';
+  const udise = '18020200403';
+
+  try {
+    const userDocRef = doc(db, 'users', cleanUid);
+    const existingSnap = await getDoc(userDocRef);
+
+    const superAdminProfile: FirestoreUserProfile = {
+      uid: cleanUid,
+      email: superAdminEmail,
+      role: 'super_admin',
+      name: 'Super Administrator',
+      active: true,
+      udiseCode: udise,
+    };
+
+    if (existingSnap.exists()) {
+      const existingData = existingSnap.data() as FirestoreUserProfile;
+      if (existingData.role === 'super_admin' && existingData.active === true) {
+        return {
+          success: true,
+          alreadyLinked: true,
+          user: { ...existingData, uid: cleanUid },
+        };
+      }
+      // Update existing document to super_admin without destroying other existing fields
+      await updateDoc(userDocRef, {
+        role: 'super_admin',
+        active: true,
+        email: superAdminEmail,
+        udiseCode: udise,
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      // Create new profile linked to this UID
+      await setDoc(
+        userDocRef,
+        {
+          ...superAdminProfile,
+          createdAt: serverTimestamp(),
+          lastLoginAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+
+    // Also link under schools/{udise}/members/{cleanUid}
+    const memberDocRef = doc(db, 'schools', udise, 'members', cleanUid);
+    await setDoc(
+      memberDocRef,
+      {
+        ...superAdminProfile,
+        createdAt: serverTimestamp(),
+        lastLoginAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    return {
+      success: true,
+      user: superAdminProfile,
+    };
+  } catch (err: any) {
+    console.error('linkExistingSuperAdminUid error:', err);
+    return {
+      success: false,
+      error: err?.message || String(err),
+    };
   }
 }
 

@@ -12,6 +12,7 @@ import { PasswordInput } from './PasswordInput';
 import { sanitizeUdiseCode, isValidUdiseCode } from '../../utils/validators';
 import { SchoolLogo } from '../common/SchoolLogo';
 import { emergencySignOut, clearJustLoggedOutFlag } from '../../services/sessionService';
+import { SuperAdminSetupModal } from './SuperAdminSetupModal';
 
 export const LoginPage: React.FC = () => {
   const {
@@ -27,6 +28,7 @@ export const LoginPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [keepSignedIn, setKeepSignedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSuperAdminSetupOpen, setIsSuperAdminSetupOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [udiseError, setUdiseError] = useState<string | null>(null);
 
@@ -229,7 +231,7 @@ export const LoginPage: React.FC = () => {
                       htmlFor="udiseCode"
                       className="block text-xs font-semibold text-slate-700"
                     >
-                      Registered Email Address <span className="text-red-500">*</span>
+                      Registered Email / School UDISE Code <span className="text-red-500">*</span>
                     </label>
                     <div className="relative flex items-center">
                       <div className="absolute left-3.5 text-slate-400 pointer-events-none">
@@ -237,12 +239,12 @@ export const LoginPage: React.FC = () => {
                       </div>
                       <input
                         id="udiseCode"
-                        type="email"
+                        type="text"
                         maxLength={80}
                         value={udiseCode}
                         onChange={handleUdiseChange}
                         disabled={isLoading || lockoutSeconds > 0}
-                        placeholder="e.g. gopinathschool2024@gmail.com"
+                        placeholder="gopinathschool2024@gmail.com or 18020200403"
                         className={`w-full pl-10 pr-3 py-2.5 text-sm font-mono text-slate-800 placeholder-slate-400 rounded-md border-b-2 bg-slate-50/70 hover:bg-slate-50 focus:bg-white border-t border-l border-r border-slate-200 transition-all focus:outline-hidden ${
                           udiseError
                             ? 'border-b-red-500 bg-red-50/30'
@@ -321,8 +323,20 @@ export const LoginPage: React.FC = () => {
                     </button>
                   </div>
 
+                  {/* Initial Super Admin Setup */}
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setIsSuperAdminSetupOpen(true)}
+                      className="w-full py-2 px-3 rounded-md border border-purple-300 bg-purple-50 hover:bg-purple-100 text-purple-950 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                    >
+                      <ShieldCheck className="w-4 h-4 text-purple-700" />
+                      <span>Initial Super Admin Setup (Create / Set Password)</span>
+                    </button>
+                  </div>
+
                   {/* Firebase Cloud Firestore Quick Connect */}
-                  <div className="pt-2">
+                  <div className="pt-1">
                     <button
                       type="button"
                       onClick={() => setIsFirebaseModalOpen(true)}
@@ -371,6 +385,12 @@ export const LoginPage: React.FC = () => {
           Diagnostics
         </button>
       </footer>
+
+      {/* Initial Super Admin Setup Modal */}
+      <SuperAdminSetupModal
+        isOpen={isSuperAdminSetupOpen}
+        onClose={() => setIsSuperAdminSetupOpen(false)}
+      />
     </div>
   );
 };

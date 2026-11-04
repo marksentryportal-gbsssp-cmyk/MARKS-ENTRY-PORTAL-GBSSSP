@@ -60,6 +60,7 @@ const PortalLayout: React.FC = () => {
     setIsChangePasswordOpen,
     isFirebaseModalOpen,
     setIsFirebaseModalOpen,
+    isCloudDataLoading,
   } = usePortal();
 
   // 1. Bell Mode: Public display mode that stays active regardless of auth status
@@ -143,6 +144,12 @@ const PortalLayout: React.FC = () => {
         isForced={isForcedPasswordChange}
         onClose={() => setIsChangePasswordOpen(false)}
       />
+      {isCloudDataLoading && (
+        <div className="fixed bottom-4 right-4 z-50 bg-slate-900/95 text-white backdrop-blur-xs px-3.5 py-2 rounded-lg shadow-xl border border-slate-700 flex items-center gap-2.5 text-xs animate-in fade-in slide-in-from-bottom-2">
+          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="font-medium">Synchronizing Cloud Firestore...</span>
+        </div>
+      )}
       <ToastContainer />
     </div>
   );

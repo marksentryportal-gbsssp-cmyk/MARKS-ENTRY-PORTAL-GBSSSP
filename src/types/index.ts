@@ -358,3 +358,48 @@ export interface OtpRequest {
   attempts: number;
 }
 
+export interface AcademicSession {
+  id: string; // e.g. "2026-2027"
+  name: string; // "2026-2027"
+  startDate: string;
+  endDate: string;
+  isCurrent: boolean;
+  status: 'active' | 'archived' | 'upcoming';
+  totalStudents?: number;
+  totalExaminations?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SectionRecord {
+  id: string; // e.g. "ankur-A", "ten-A"
+  classId: string;
+  className: string;
+  name: string; // "A", "B", "C"
+  displayName: string; // "Section A"
+  classTeacherName?: string;
+  roomNo?: string;
+  capacity?: number;
+  updatedAt?: string;
+}
+
+export interface PromotionRecord {
+  id: string; // "promo-{studentId}-{fromSession}-{toSession}"
+  studentId: string;
+  studentName: string;
+  registrationNo?: string;
+  fromClassId: string;
+  fromClassName: string;
+  fromSession: string;
+  toClassId: string;
+  toClassName: string;
+  toSession: string;
+  status: 'promoted' | 'retained' | 'passed_out' | 'transferred';
+  promotedAt: string;
+  promotedBy: string;
+  finalPercentage?: number;
+  finalGrade?: string;
+  remarks?: string;
+}
+
+

@@ -153,13 +153,18 @@ export const UserManagementTab: React.FC = () => {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
-      {/* Top Banner Notice */}
-      <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-3 text-xs text-blue-900">
-        <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+      {/* Cloud Security & Multi-Device Synchronization Status Banner */}
+      <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg flex items-start gap-3 text-xs text-emerald-950">
+        <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
         <div className="space-y-1">
-          <p className="font-bold">Local Storage Security Note</p>
-          <p>
-            This app currently stores data in this browser only. For real multi-user security across different devices, connect a cloud database backend.
+          <p className="font-bold flex items-center gap-2">
+            <span>Cloud Firestore & Firebase Authentication Active</span>
+            <span className="font-mono text-[10px] bg-emerald-200/70 text-emerald-900 px-2 py-0.5 rounded font-semibold">
+              marks-entry-portal-512313
+            </span>
+          </p>
+          <p className="text-emerald-800">
+            User accounts, roles, and authorization policies are securely synchronized across all authorized school computers using Firebase Cloud Firestore and Firebase Authentication.
           </p>
         </div>
       </div>

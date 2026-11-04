@@ -25,6 +25,11 @@ import {
 } from '../../services/firebase';
 import { migrateLocalDataToFirestore } from '../../services/firestoreService';
 import { usePortal } from '../../store/portalStore';
+import {
+  verifyFirestoreCloudRecords,
+  CloudRecordVerification,
+  isDemoStudentDataset,
+} from '../../services/authoritativeCloudService';
 
 interface FirebaseSetupModalProps {
   isOpen: boolean;
@@ -47,6 +52,8 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
     uploadAllLocalDataToCloud,
     cloudSyncStatus,
     schoolInfo,
+    reloadCloudData,
+    isCloudDataLoading,
   } = usePortal();
 
   const [config, setConfig] = useState<FirebaseWebConfig>(() => {
@@ -76,10 +83,26 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
     error?: string;
   } | null>(null);
 
+  // Cloud verification state
+  const [isVerifyingCloud, setIsVerifyingCloud] = useState(false);
+  const [cloudVerification, setCloudVerification] = useState<CloudRecordVerification | null>(null);
+
   // Migration state
   const [isMigrating, setIsMigrating] = useState(false);
   const [migrationProgress, setMigrationProgress] = useState<{ current: number; total: number; stage: string } | null>(null);
   const [migrationResult, setMigrationResult] = useState<Record<string, number> | null>(null);
+
+  const handleVerifyCloud = async () => {
+    setIsVerifyingCloud(true);
+    try {
+      const res = await verifyFirestoreCloudRecords(schoolInfo.udiseCode);
+      setCloudVerification(res);
+    } catch (err: any) {
+      console.warn('Cloud verification check warning:', err);
+    } finally {
+      setIsVerifyingCloud(false);
+    }
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -88,8 +111,9 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
         setConfig(stored);
         handleTestConnection(stored);
       }
+      handleVerifyCloud();
     }
-  }, [isOpen]);
+  }, [isOpen, schoolInfo.udiseCode]);
 
   if (!isOpen) return null;
 
@@ -302,10 +326,75 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
             Data entered on Computer A (students from Bulk Import, marks, and WhatsApp technical support phone numbers) will be visible when logging in from any other computer.
           </p>
 
-          {/* Current Local vs Cloud Records */}
+          {/* Cloud Firestore Authoritative Verification Card */}
+          <div className="bg-slate-900 text-white rounded-lg p-4 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-700 pb-2">
+              <div className="flex items-center gap-2">
+                <Database className="w-4 h-4 text-emerald-400" />
+                <h4 className="font-bold text-xs text-emerald-300">
+                  Live Cloud Firestore Authoritative Records (Project: marks-entry-portal-512313)
+                </h4>
+              </div>
+              <button
+                type="button"
+                disabled={isVerifyingCloud}
+                onClick={handleVerifyCloud}
+                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 rounded text-[11px] font-semibold transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+              >
+                {isVerifyingCloud ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                <span>Refresh Cloud Counts</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-center text-xs font-mono">
+              <div className="p-2 bg-slate-800/80 rounded border border-slate-700">
+                <span className="text-[10px] text-slate-400 uppercase block font-sans">Students</span>
+                <span className="text-sm font-bold text-emerald-400">
+                  {cloudVerification ? cloudVerification.totalStudents : 'Checking...'}
+                </span>
+              </div>
+              <div className="p-2 bg-slate-800/80 rounded border border-slate-700">
+                <span className="text-[10px] text-slate-400 uppercase block font-sans">Examinations</span>
+                <span className="text-sm font-bold text-purple-400">
+                  {cloudVerification ? cloudVerification.totalExaminations : 'Checking...'}
+                </span>
+              </div>
+              <div className="p-2 bg-slate-800/80 rounded border border-slate-700">
+                <span className="text-[10px] text-slate-400 uppercase block font-sans">Marks</span>
+                <span className="text-sm font-bold text-amber-400">
+                  {cloudVerification ? cloudVerification.totalMarksRecords : 'Checking...'}
+                </span>
+              </div>
+              <div className="p-2 bg-slate-800/80 rounded border border-slate-700">
+                <span className="text-[10px] text-slate-400 uppercase block font-sans">Classes</span>
+                <span className="text-sm font-bold text-cyan-400">
+                  {cloudVerification ? cloudVerification.totalClasses : 'Checking...'}
+                </span>
+              </div>
+              <div className="p-2 bg-slate-800/80 rounded border border-slate-700">
+                <span className="text-[10px] text-slate-400 uppercase block font-sans">Subjects</span>
+                <span className="text-sm font-bold text-indigo-400">
+                  {cloudVerification ? cloudVerification.totalSubjects : 'Checking...'}
+                </span>
+              </div>
+              <div className="p-2 bg-slate-800/80 rounded border border-slate-700">
+                <span className="text-[10px] text-slate-400 uppercase block font-sans">Sessions</span>
+                <span className="text-sm font-bold text-rose-400">
+                  {cloudVerification ? cloudVerification.totalAcademicSessions.length : 'Checking...'}
+                </span>
+              </div>
+            </div>
+
+            <div className="text-[10px] text-slate-400 flex items-center justify-between pt-1">
+              <span>Database: <strong>Cloud Firestore Authoritative</strong></span>
+              <span>Sessions: <strong>{cloudVerification?.totalAcademicSessions?.join(', ') || '2026-2027'}</strong></span>
+            </div>
+          </div>
+
+          {/* Current Local Cache Records */}
           <div className="bg-white border border-slate-200 rounded-md p-3 space-y-2">
             <span className="font-bold text-slate-700 text-[11px] block uppercase tracking-wide">
-              Active Portal Records in Local Cache:
+              Active Portal Records in Local Browser Cache:
             </span>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
               <div className="p-2 bg-slate-50 rounded border border-slate-100">
@@ -326,6 +415,19 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
               </div>
             </div>
           </div>
+
+          {/* Demo Data Protection Warning */}
+          {isDemoStudentDataset(students) && (
+            <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg text-xs text-amber-900 space-y-1">
+              <div className="flex items-center gap-2 font-bold text-amber-950">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>Upload Guard Active: Local Dataset Contains 48 Demo Students</span>
+              </div>
+              <p className="text-[11px] leading-relaxed">
+                Uploading demo data to Cloud Firestore is strictly blocked to protect your original production database (718 students). Click <strong>Pull & Sync Production Data from Cloud</strong> below to download and synchronize verified records to this device.
+              </p>
+            </div>
+          )}
 
           {/* Backup Button before Migration */}
           <div className="p-2.5 bg-amber-50/80 border border-amber-200 rounded flex items-center justify-between gap-2">
@@ -371,12 +473,32 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
           )}
 
           <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-1">
-            <span className="text-[10px] text-slate-500 italic">
-              * Non-destructive cloud upload; merges safely into schools/{schoolInfo.udiseCode}
-            </span>
             <button
               type="button"
-              disabled={isMigrating || connectionStatus !== 'connected'}
+              disabled={isCloudDataLoading}
+              onClick={async () => {
+                await reloadCloudData();
+                await handleVerifyCloud();
+                addToast('Production records successfully loaded and synchronized from Cloud Firestore!', 'success');
+              }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded text-xs shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+            >
+              {isCloudDataLoading ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Loading from Cloud...</span>
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Pull & Sync Production Data from Cloud</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              disabled={isMigrating || connectionStatus !== 'connected' || isDemoStudentDataset(students)}
               onClick={handleUploadMultiDeviceCloud}
               className="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-teal-700 to-emerald-700 hover:from-teal-800 hover:to-emerald-800 text-white font-bold rounded text-xs shadow-xs transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -388,7 +510,7 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
               ) : (
                 <>
                   <CloudUpload className="w-3.5 h-3.5" />
-                  <span>Sync All Records to Cloud</span>
+                  <span>Sync Local Records to Cloud</span>
                 </>
               )}
             </button>
@@ -422,7 +544,7 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
               </label>
               <input
                 type="text"
-                placeholder="gbsss-marks-entry-portal"
+                placeholder="marks-entry-portal-512313"
                 value={config.projectId}
                 onChange={(e) => setConfig({ ...config, projectId: e.target.value.trim() })}
                 className="w-full px-3 py-1.5 border border-slate-300 rounded font-mono text-xs focus:outline-teal-600"
@@ -433,7 +555,7 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
               <label className="font-semibold text-slate-700 block mb-1">Auth Domain</label>
               <input
                 type="text"
-                placeholder="gbsss-marks-entry-portal.firebaseapp.com"
+                placeholder="marks-entry-portal-512313.firebaseapp.com"
                 value={config.authDomain}
                 onChange={(e) => setConfig({ ...config, authDomain: e.target.value.trim() })}
                 className="w-full px-3 py-1.5 border border-slate-300 rounded font-mono text-xs focus:outline-teal-600"
@@ -444,7 +566,7 @@ export const FirebaseSetupModal: React.FC<FirebaseSetupModalProps> = ({
               <label className="font-semibold text-slate-700 block mb-1">App ID</label>
               <input
                 type="text"
-                placeholder="1:467908255159:web:d60f6f6b04c723e4ae9c32"
+                placeholder="1:205024505198:web:4141f07f22ca385073657f"
                 value={config.appId}
                 onChange={(e) => setConfig({ ...config, appId: e.target.value.trim() })}
                 className="w-full px-3 py-1.5 border border-slate-300 rounded font-mono text-xs focus:outline-teal-600"
